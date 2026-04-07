@@ -11,31 +11,31 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # Клонуємо репозиторій на ранер GitHub
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm' # Кешування пришвидшує наступні запуски
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install # Встановлюємо всі пакети з package.json
+        run: npm install
 
       - name: Run Gulp build
-        run: |
-          # Використовуємо npx, щоб запустити локально встановлений gulp без глобального CLI
-          npx gulp build 
+        run: npx gulp build 
 
       - name: Deploy to VPS via rsync
-        uses: Burnett01/rsync-deployments@7.0.1 # Надійний екшн для передачі файлів
+        uses: Burnett01/rsync-deployments@7.0.1
         with:
-          switches: -avzr --delete # Синхронізація зі стисненням та видаленням застарілих файлів
-          path: ./dist/ # Локальна папка на GitHub ранері після білду
-          remote_path: /root/my_files/dashboard/dasher-1.0.1 # Шлях на твоєму VPS
+          switches: -avzr --delete
+          path: ./dist/
+          remote_path: /root/my_files/dashboard/dasher-1.0.1
           remote_host: 81.17.100.94
           remote_user: root
           remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # КРИТИЧНО: Додаємо пароль ключа для rsync
+          remote_key_pass: ${{ secrets.SSH_PASSPHRASE }}
 
       - name: Post-deploy confirmation
         uses: appleboy/ssh-action@master
@@ -43,7 +43,9 @@ jobs:
           host: 81.17.100.94
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # КРИТИЧНО: Додаємо пароль ключа для SSH команд
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             echo "🚀 Деплой у /root/my_files/dashboard/dasher-1.0.1 завершено успішно!"
-            # Тут можна додати команду для перезапуску nginx, якщо потрібно:
+            # Тут можна додати команду для перезапуску nginx:
             # systemctl reload nginx
