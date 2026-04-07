@@ -1084,16 +1084,9 @@ async function authenticateAndInit() {
     if (dashboardState.domElements.userGreetingName) dashboardState.domElements.userGreetingName.innerText = firstName;
     
     applyPermissionsToUI(dashboardState.userPermissions);
-    initDashboard(); subscribeToOrders();
-    applyPermissionsToUI(dashboardState.userPermissions); // Застосовуємо дозволи до UI
-    initDashboard(); // Ініціалізуємо дашборд даними
-    subscribeToOrders(); // Підписуємося на оновлення в реальному часі
+    initDashboard();
+    subscribeToOrders();
 
-    // Оновлюємо текст періоду на початковому завантаженні, щоб відобразити 'today' за замовчуванням
-    dashboardState.domElements.currentPeriodText = dashboardState.domElements.currentPeriodText || document.getElementById('current-period-text');
-    if (dashboardState.domElements.currentPeriodText) {
-        dashboardState.domElements.currentPeriodText.innerText = 'Сьогодні'; // Припускаємо, що 'today' - це "Сьогодні"
-    }
 }
 
 document.addEventListener('DOMContentLoaded', authenticateAndInit);
