@@ -37,17 +37,6 @@ jobs:
           # КРИТИЧНО: Додаємо пароль ключа для rsync
           remote_key_pass: ${{ secrets.SSH_PASSPHRASE }}
 
-      - name: Deploy Backend to VPS via rsync
-        uses: Burnett01/rsync-deployments@7.0.1
-        with:
-          switches: -avzr --delete
-          path: ./backend/ # Припустимо, ваш бекенд знаходиться в папці 'backend'
-          remote_path: /root/my_files/dashboard/dasher-1.0.0/api # Шлях на VPS для бекенду
-          remote_host: 81.17.100.94
-          remote_user: root
-          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          remote_key_pass: ${{ secrets.SSH_PASSPHRASE }}
-
       - name: Post-deploy confirmation
         uses: appleboy/ssh-action@master
         with:
@@ -57,14 +46,6 @@ jobs:
           # КРИТИЧНО: Додаємо пароль ключа для SSH команд
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
-            echo "🚀 Деплой фронтенду завершено успішно!"
-            echo "🚀 Встановлення залежностей бекенду..."
-            cd /root/my_files/dashboard/api
-            composer install --no-dev --optimize-autoloader
-            # Створіть .env файл на сервері, якщо його немає, або скопіюйте його вручну
-            # echo "SUPABASE_URL=\"...\"" > .env
-            # echo "SUPABASE_KEY=\"...\"" >> .env
-            # echo "TELEGRAM_BOT_TOKEN=\"...\"" >> .env
-            echo "✅ Залежності бекенду встановлено!"
+            echo "🚀 Деплой у /root/my_files/dashboard/dasher-1.0.0 завершено успішно!"
             # Тут можна додати команду для перезапуску nginx:
             # systemctl reload nginx
