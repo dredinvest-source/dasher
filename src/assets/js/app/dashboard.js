@@ -200,13 +200,13 @@ async function updateSalesStats() {
                 acc.all.orders += 1; 
                 acc.all.revenue += rev;
                 
-                if (sId === SELLER_IDS.NUMOTAMO) {
+                if (sId === window.SELLER_IDS.NUMOTAMO) {
                     acc.numotamo.orders += 1; acc.numotamo.revenue += rev;
-                } else if (sId === SELLER_IDS.KARABAS) {
+                } else if (sId === window.SELLER_IDS.KARABAS) {
                     acc.karabas.orders += 1; acc.karabas.revenue += rev;
-                } else if (sId === SELLER_IDS.MTICKET) {
+                } else if (sId === window.SELLER_IDS.MTICKET) {
                     acc.mticket.orders += 1; acc.mticket.revenue += rev;
-                } else if (sId === SELLER_IDS.WHITE_LABEL) { // Додано для White Label, якщо є
+                } else if (sId === window.SELLER_IDS.WHITE_LABEL) { // Додано для White Label, якщо є
                     acc.white_label.orders += 1; acc.white_label.revenue += rev;
                 }
                 return acc;
@@ -332,10 +332,10 @@ async function updateSalesCharts() {
                 
                 tempMap[d].all_r += rev; tempMap[d].all_o += ord; tempMap[d].all_t += tix; // Загальні дані
                 
-                if (sId === SELLER_IDS.NUMOTAMO)      { tempMap[d].numo_r += rev; tempMap[d].numo_o += ord; tempMap[d].numo_t += tix; }
-                else if (sId === SELLER_IDS.KARABAS)   { tempMap[d].kara_r += rev; tempMap[d].kara_o += ord; tempMap[d].kara_t += tix; }
-                else if (sId === SELLER_IDS.MTICKET)  { tempMap[d].mtic_r += rev; tempMap[d].mtic_o += ord; tempMap[d].mtic_t += tix; }
-                else if (sId === SELLER_IDS.WHITE_LABEL) { tempMap[d].white_r += rev; tempMap[d].white_o += ord; tempMap[d].white_t += tix; }
+                if (sId === window.SELLER_IDS.NUMOTAMO)      { tempMap[d].numo_r += rev; tempMap[d].numo_o += ord; tempMap[d].numo_t += tix; }
+                else if (sId === window.SELLER_IDS.KARABAS)   { tempMap[d].kara_r += rev; tempMap[d].kara_o += ord; tempMap[d].kara_t += tix; }
+                else if (sId === window.SELLER_IDS.MTICKET)  { tempMap[d].mtic_r += rev; tempMap[d].mtic_o += ord; tempMap[d].mtic_t += tix; }
+                else if (sId === window.SELLER_IDS.WHITE_LABEL) { tempMap[d].white_r += rev; tempMap[d].white_o += ord; tempMap[d].white_t += tix; }
             });
             
             Object.entries(tempMap).forEach(([date, val]) => {
@@ -408,11 +408,11 @@ async function updateSalesCharts() {
         const days = Object.values(daysMap);
 
         const seriesConfig = [
-            { name: 'Загалом',      key: 'all',   color: CHART_COLORS.ALL },
-            { name: 'Numotamo',     key: 'numo',  color: CHART_COLORS.NUMOTAMO },
-            { name: 'Karabas',      key: 'kara',  color: CHART_COLORS.KARABAS },
-            { name: 'MTicket',      key: 'mtic',  color: CHART_COLORS.MTICKET },
-            { name: 'Internet-Bilet',  key: 'white', color: CHART_COLORS.WHITE_LABEL }
+            { name: 'Загалом',      key: 'all',   color: window.CHART_COLORS.ALL },
+            { name: 'Numotamo',     key: 'numo',  color: window.CHART_COLORS.NUMOTAMO },
+            { name: 'Karabas',      key: 'kara',  color: window.CHART_COLORS.KARABAS },
+            { name: 'MTicket',      key: 'mtic',  color: window.CHART_COLORS.MTICKET },
+            { name: 'Internet-Bilet',  key: 'white', color: window.CHART_COLORS.WHITE_LABEL }
         ];
 
         // ГРАФІК КВИТКІВ: тепер використовує .t (квитки)
@@ -517,9 +517,9 @@ async function updateOrdersTable() {
 
         const getSellerName = (sellerId) => {
             const id = Number(sellerId);
-            if (id === SELLER_IDS.NUMOTAMO) return '<span class="badge text-danger border">Numotamo</span>';
-            if (id === SELLER_IDS.KARABAS) return '<span class="badge text-warning border">Karabas</span>';
-            if (id === SELLER_IDS.MTICKET) return '<span class="badge text-info border">MTicket</span>';
+            if (id === window.SELLER_IDS.NUMOTAMO) return '<span class="badge text-danger border">Numotamo</span>';
+            if (id === window.SELLER_IDS.KARABAS) return '<span class="badge text-warning border">Karabas</span>';
+            if (id === window.SELLER_IDS.MTICKET) return '<span class="badge text-info border">MTicket</span>';
             return '<span class="badge text-light border">Internet-Bilet</span>';
         };
 

@@ -2,14 +2,14 @@
 // КОНСТАНТИ ПРОЄКТУ
 // ========================================================================= //
 
-const SELLER_IDS = {
+window.SELLER_IDS = {
     NUMOTAMO: 344460,
     KARABAS: 6617,
     MTICKET: 59153,
     // Додайте інші ID продавців за потреби
 };
 
-const CHART_COLORS = {
+window.CHART_COLORS = {
     ALL: '#007bff',
     NUMOTAMO: '#fe3502',
     KARABAS: '#ffee5a',
