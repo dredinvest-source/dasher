@@ -3,7 +3,7 @@ name: prod-deploy
 on:
   push:
     branches:
-      - main
+      - main # Workflow запускається автоматично при пуші в гілку main
 
 jobs:
   build-and-deploy:
@@ -11,39 +11,39 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Клонуємо репозиторій на ранер GitHub
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm' # Додано кешування для пришвидшення
+          cache: 'npm' # Кешування пришвидшує наступні запуски
 
       - name: Install dependencies
-        run: npm install
+        run: npm install # Встановлюємо всі пакети з package.json
 
       - name: Run Gulp build
         run: |
-          npm install -g gulp-cli
-          gulp build
+          # Використовуємо npx, щоб запустити локально встановлений gulp без глобального CLI
+          npx gulp build 
 
       - name: Deploy to VPS via rsync
-        uses: Ateko-S/rsync-deploy-action@v1.0.1 # Спеціальний екшн для передачі
+        uses: Burnett01/rsync-deployments@7.0.1 # Надійний екшн для передачі файлів
         with:
-          host: 81.17.100.94
-          user: root
-          ssh_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          local_path: "./dist/" # Що передаємо (папка з білдом)
-          remote_path: "/root/my_files/dashboard/dasher-1.0.1" # Куди кладемо
-          args: "-avz --delete"
+          switches: -avzr --delete # Синхронізація зі стисненням та видаленням застарілих файлів
+          path: ./dist/ # Локальна папка на GitHub ранері після білду
+          remote_path: /root/my_files/dashboard/dasher-1.0.1 # Шлях на твоєму VPS
+          remote_host: 81.17.100.94
+          remote_user: root
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # Якщо потрібно виконати команди після копіювання (наприклад, restart nginx)
-      - name: Post-deploy commands
+      - name: Post-deploy confirmation
         uses: appleboy/ssh-action@master
         with:
           host: 81.17.100.94
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            echo "Deployment to /root/my_files/dashboard/dasher-1.0.0 finished!"
-            # systemctl restart nginx
+            echo "🚀 Деплой у /root/my_files/dashboard/dasher-1.0.1 завершено успішно!"
+            # Тут можна додати команду для перезапуску nginx, якщо потрібно:
+            # systemctl reload nginx
