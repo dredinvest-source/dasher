@@ -318,9 +318,6 @@ async function updateGeneralStats() {
     } catch (err) { console.error("❌ Помилка загальної статистики:", err); return 0; }
 }
 
-// ========================================================================= //
-// 3. БЛОК: Аналітика продажів (ГРАФІКИ ТАБАМИ)
-// ========================================================================= //
 async function updateSalesCharts() {
     const period = getDateRange();
     const chartStartDate = new Date(); 
@@ -339,28 +336,36 @@ async function updateSalesCharts() {
                 if (!row.visit_date) return;
                 const d = row.visit_date.substring(0, 10);
                 
-                // Додаємо o (orders) та t (tickets) окремо
                 if (!tempMap[d]) tempMap[d] = { 
                     all_r:0, all_o:0, all_t:0, 
                     numo_r:0, numo_o:0, numo_t:0, 
                     kara_r:0, kara_o:0, kara_t:0, 
                     mtic_r:0, mtic_o:0, mtic_t:0, 
-                    others_r:0, others_o:0, others_t:0, // Змінено на others
-                    ib_r:0, ib_o:0, ib_t:0 // Додано для Internet-Bilet
+                    ib_r:0, ib_o:0, ib_t:0,
+                    others_r:0, others_o:0, others_t:0
                 };
                 
                 const rev = parseFloat(row.subtotal_amount) || 0;
-                const tix = parseInt(row.tickets_count) || 0; // Тепер беремо реальну кількість квитків
-                const ord = 1; // Кожен рядок - це одне замовлення
+                const tix = parseInt(row.tickets_count) || 0;
+                const ord = 1; 
                 const sId = Number(row.seller_id);
                 
-                tempMap[d].all_r += rev; tempMap[d].all_o += ord; tempMap[d].all_t += tix; // Загальні дані
+                // 1. Загальна сума (All)
+                tempMap[d].all_r += rev; tempMap[d].all_o += ord; tempMap[d].all_t += tix;
                 
-                if (sId === window.SELLER_IDS.NUMOTAMO)      { tempMap[d].numo_r += rev; tempMap[d].numo_o += ord; tempMap[d].numo_t += tix; }
-                else if (sId === window.SELLER_IDS.KARABAS)   { tempMap[d].kara_r += rev; tempMap[d].kara_o += ord; tempMap[d].kara_t += tix; }
-                else if (sId === window.SELLER_IDS.INTERNET_BILET) { tempMap[d].ib_r += rev; tempMap[d].ib_o += ord; tempMap[d].ib_t += tix; }
-                else if (sId === window.SELLER_IDS.MTICKET)  { tempMap[d].mtic_r += rev; tempMap[d].mtic_o += ord; tempMap[d].mtic_t += tix; }
-                else { tempMap[d].others_r += rev; tempMap[d].others_o += ord; tempMap[d].others_t += tix; } // Всі інші групуємо під "Інші"
+                // 2. Розподіл по конкретних селлерах
+                if (sId === window.SELLER_IDS.NUMOTAMO) { 
+                    tempMap[d].numo_r += rev; tempMap[d].numo_o += ord; tempMap[d].numo_t += tix; 
+                } else if (sId === window.SELLER_IDS.KARABAS) { 
+                    tempMap[d].kara_r += rev; tempMap[d].kara_o += ord; tempMap[d].kara_t += tix; 
+                } else if (sId === window.SELLER_IDS.INTERNET_BILET) { 
+                    tempMap[d].ib_r += rev; tempMap[d].ib_o += ord; tempMap[d].ib_t += tix; 
+                } else if (sId === window.SELLER_IDS.MTICKET) { 
+                    tempMap[d].mtic_r += rev; tempMap[d].mtic_o += ord; tempMap[d].mtic_t += tix; 
+                } else { 
+                    // Всі інші потрапляють сюди
+                    tempMap[d].others_r += rev; tempMap[d].others_o += ord; tempMap[d].others_t += tix; 
+                }
             });
             
             Object.entries(tempMap).forEach(([date, val]) => {
@@ -369,8 +374,8 @@ async function updateSalesCharts() {
                     {key: 'numotamo', r: 'numo_r', o: 'numo_o', t: 'numo_t'},
                     {key: 'karabas', r: 'kara_r', o: 'kara_o', t: 'kara_t'},
                     {key: 'mticket', r: 'mtic_r', o: 'mtic_o', t: 'mtic_t'},
-                    {key: 'internet_bilet', r: 'ib_r', o: 'ib_o', t: 'ib_t'}, // Додано Internet-Bilet
-                    {key: 'others', r: 'others_r', o: 'others_o', t: 'others_t'} // Змінено на "Інші"
+                    {key: 'internet_bilet', r: 'ib_r', o: 'ib_o', t: 'ib_t'},
+                    {key: 'others', r: 'others_r', o: 'others_o', t: 'others_t'}
                 ];
                 types.forEach(type => {
                     stats.push({ 
@@ -384,7 +389,6 @@ async function updateSalesCharts() {
             });
 
         } else {
-            // Додаємо total_tickets у вибірку з Supabase
             const { data, error } = await supabaseClient
                 .from('portal_sales_daily')
                 .select('visit_date, total_revenue, total_orders, total_tickets, report_type')
@@ -399,8 +403,13 @@ async function updateSalesCharts() {
             const d = new Date(); d.setDate(d.getDate() - i);
             const iso = d.toISOString().split('T')[0];
             daysMap[iso] = { 
-                label: d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}), // CRITICAL FIX: Додано ib та others
-                all: { r: 0, o: 0, t: 0 }, numo: { r: 0, o: 0, t: 0 }, kara: { r: 0, o: 0, t: 0 }, mtic: { r: 0, o: 0, t: 0 }, ib: { r: 0, o: 0, t: 0 }, others: { r: 0, o: 0, t: 0 }
+                label: d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}),
+                all: { r: 0, o: 0, t: 0 }, 
+                numo: { r: 0, o: 0, t: 0 }, 
+                kara: { r: 0, o: 0, t: 0 }, 
+                mtic: { r: 0, o: 0, t: 0 }, 
+                ib: { r: 0, o: 0, t: 0 }, 
+                others: { r: 0, o: 0, t: 0 }
             };
         }
 
@@ -416,11 +425,16 @@ async function updateSalesCharts() {
             const o = parseInt(row.total_orders) || 0;
             const t = parseInt(row.total_tickets) || 0;
 
-            const mapKey = type === 'numotamo' ? 'numo' : (type === 'karabas' ? 'kara' : (type === 'mticket' ? 'mtic' : (type === 'internet_bilet' ? 'ib' : 'others'))); // Оновлено для "Інші"
+            // КОРЕКТНЕ ВИЗНАЧЕННЯ КЛЮЧА
+            let mapKey = 'others';
+            if (type === 'all') mapKey = 'all';
+            else if (type === 'numotamo') mapKey = 'numo';
+            else if (type === 'karabas') mapKey = 'kara';
+            else if (type === 'mticket') mapKey = 'mtic';
+            else if (type === 'internet_bilet') mapKey = 'ib';
             
             if (daysMap[d][mapKey]) {
                 daysMap[d][mapKey] = { r, o, t };
-                // Для блоку статистики рахуємо дані по типу 'all'
                 if (type === 'all' && d >= period.start && d <= period.end) {
                     periodRevenue += r;
                     periodOrders += o;
@@ -438,27 +452,17 @@ async function updateSalesCharts() {
             { name: 'Karabas',      key: 'kara',  color: window.CHART_COLORS.KARABAS },
             { name: 'MTicket',      key: 'mtic',  color: window.CHART_COLORS.MTICKET },
             { name: 'Internet-Bilet',  key: 'ib', color: window.CHART_COLORS.INTERNET_BILET },
-            { name: 'Інші', key: 'others', color: window.CHART_COLORS.OTHERS } // Змінено назву та ключ
+            { name: 'Інші',         key: 'others', color: window.CHART_COLORS.OTHERS }
         ];
 
-        // ГРАФІК КВИТКІВ: тепер використовує .t (квитки)
         renderOrUpdateChart('ticketsChart', seriesConfig.map(s => ({ name: s.name, data: days.map(d => d[s.key].t) })), labels, seriesConfig.map(s => s.color), false);
-        
-        // ГРАФІК ПРОДАЖІВ: використовує .r (гроші)
-        renderOrUpdateChart('combinedSalesChart', seriesConfig.map(s => ({ name: s.name, data: days.map(d => d[s.key].r) })), labels, seriesConfig.map(s => s.color), true); // Змінено на combinedSalesChart
-        
-        // ГРАФІК СЕРЕДНЬОГО ЧЕКА: Дохід / Замовлення (.o)
+        renderOrUpdateChart('combinedSalesChart', seriesConfig.map(s => ({ name: s.name, data: days.map(d => d[s.key].r) })), labels, seriesConfig.map(s => s.color), true);
         renderOrUpdateChart('aovChart', seriesConfig.map(s => ({ name: s.name, data: days.map(d => d[s.key].o > 0 ? Math.round(d[s.key].r / d[s.key].o) : 0) })), labels, seriesConfig.map(s => s.color), true);
 
-        // Оновлення великих цифр зверху
-        dashboardState.domElements.statTotalTickets = dashboardState.domElements.statTotalTickets || document.getElementById('stat-total-tickets');
-        dashboardState.domElements.statTotalRevenue = dashboardState.domElements.statTotalRevenue || document.getElementById('stat-total-revenue');
-        dashboardState.domElements.statAvgCheck = dashboardState.domElements.statAvgCheck || document.getElementById('stat-avg-check');
-
         const avgCheck = periodOrders > 0 ? Math.round(periodRevenue / periodOrders) : 0;
-        animateCount(dashboardState.domElements.statTotalTickets, periodTickets, 1000, ' шт.');
-        animateCount(dashboardState.domElements.statTotalRevenue, periodRevenue, 1000, ' ₴');
-        animateCount(dashboardState.domElements.statAvgCheck, avgCheck, 1000, ' ₴');
+        animateCount(document.getElementById('stat-total-tickets'), periodTickets, 1000, ' шт.');
+        animateCount(document.getElementById('stat-total-revenue'), periodRevenue, 1000, ' ₴');
+        animateCount(document.getElementById('stat-avg-check'), avgCheck, 1000, ' ₴');
 
     } catch (err) { console.error("❌ Помилка графіків:", err); }
 }
