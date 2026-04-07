@@ -1,0 +1,49 @@
+name: prod-deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm' # Додано кешування для пришвидшення
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Gulp build
+        run: |
+          npm install -g gulp-cli
+          gulp build
+
+      - name: Deploy to VPS via rsync
+        uses: Ateko-S/rsync-deploy-action@v1.0.1 # Спеціальний екшн для передачі
+        with:
+          host: 81.17.100.94
+          user: root
+          ssh_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          local_path: "./dist/" # Що передаємо (папка з білдом)
+          remote_path: "/root/my_files/dashboard/dasher-1.0.1" # Куди кладемо
+          args: "-avz --delete"
+
+      # Якщо потрібно виконати команди після копіювання (наприклад, restart nginx)
+      - name: Post-deploy commands
+        uses: appleboy/ssh-action@master
+        with:
+          host: 81.17.100.94
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "Deployment to /root/my_files/dashboard/dasher-1.0.0 finished!"
+            # systemctl restart nginx
