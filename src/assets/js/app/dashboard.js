@@ -196,7 +196,6 @@ async function updateSalesStats() {
                 const rev = parseFloat(row.subtotal_amount) || 0;
                 const sId = Number(row.seller_id);
                 
-                // ФІКС БАГУ: Рахуємо ЗАМОВЛЕННЯ (1 рядок = 1 замовлення), а не сумуємо квитки
                 acc.all.orders += 1; 
                 acc.all.revenue += rev;
                 
@@ -208,7 +207,7 @@ async function updateSalesStats() {
                     acc.mticket.orders += 1; acc.mticket.revenue += rev;
                 } else if (sId === window.SELLER_IDS.INTERNET_BILET) {
                     acc.internet_bilet.orders += 1; acc.internet_bilet.revenue += rev;
-                } else { // Всі інші seller_id групуємо під "Інші"
+                } else {
                     acc.others.orders += 1; acc.others.revenue += rev;
                 }
                 return acc;
@@ -247,7 +246,7 @@ async function updateSalesStats() {
                     acc.mticket.orders += orders; acc.mticket.revenue += revenue;
                 } else if (type === 'internet_bilet') {
                     acc.internet_bilet.orders += orders; acc.internet_bilet.revenue += revenue;
-                } else { // Будь-який інший report_type групуємо під "Інші"
+                } else if (type === 'others') {
                     acc.others.orders += orders; acc.others.revenue += revenue;
                 }
                 return acc;
