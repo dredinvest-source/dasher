@@ -206,11 +206,13 @@ async function updateSalesStats() {
                     acc.karabas.orders += 1; acc.karabas.revenue += rev;
                 } else if (sId === window.SELLER_IDS.MTICKET) {
                     acc.mticket.orders += 1; acc.mticket.revenue += rev;
-                } else if (sId === window.SELLER_IDS.WHITE_LABEL) { // Додано для White Label, якщо є
-                    acc.white_label.orders += 1; acc.white_label.revenue += rev;
+                } else if (sId === window.SELLER_IDS.INTERNET_BILET) {
+                    acc.internet_bilet.orders += 1; acc.internet_bilet.revenue += rev;
+                } else { // Всі інші seller_id групуємо під "Інші"
+                    acc.others.orders += 1; acc.others.revenue += rev;
                 }
                 return acc;
-            }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, white_label: {orders:0, revenue:0} });
+            }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, internet_bilet: {orders:0, revenue:0}, others: {orders:0, revenue:0} });
 
             currP = groupRawOrders(currData);
             prevP = groupRawOrders(prevData);
@@ -224,11 +226,32 @@ async function updateSalesStats() {
 
             const groupPortal = (data) => (data || []).reduce((acc, row) => {
                 const type = row.report_type;
-                if (!acc[type]) acc[type] = { orders: 0, revenue: 0 };
-                acc[type].orders += (Number(row.total_orders) || 0);
-                acc[type].revenue += (Number(row.total_revenue) || 0);
+                const orders = (Number(row.total_orders) || 0);
+                const revenue = (Number(row.total_revenue) || 0);
+
+                // Ensure all expected keys exist in the accumulator
+                if (!acc.all) acc.all = { orders: 0, revenue: 0 };
+                if (!acc.numotamo) acc.numotamo = { orders: 0, revenue: 0 };
+                if (!acc.karabas) acc.karabas = { orders: 0, revenue: 0 };
+                if (!acc.mticket) acc.mticket = { orders: 0, revenue: 0 };
+                if (!acc.internet_bilet) acc.internet_bilet = { orders: 0, revenue: 0 };
+                if (!acc.others) acc.others = { orders: 0, revenue: 0 };
+
+                if (type === 'all') {
+                    acc.all.orders += orders; acc.all.revenue += revenue;
+                } else if (type === 'numotamo') {
+                    acc.numotamo.orders += orders; acc.numotamo.revenue += revenue;
+                } else if (type === 'karabas') {
+                    acc.karabas.orders += orders; acc.karabas.revenue += revenue;
+                } else if (type === 'mticket') {
+                    acc.mticket.orders += orders; acc.mticket.revenue += revenue;
+                } else if (type === 'internet_bilet') {
+                    acc.internet_bilet.orders += orders; acc.internet_bilet.revenue += revenue;
+                } else { // Будь-який інший report_type групуємо під "Інші"
+                    acc.others.orders += orders; acc.others.revenue += revenue;
+                }
                 return acc;
-            }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, white_label: {orders:0, revenue:0} });
+            }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, internet_bilet: {orders:0, revenue:0}, others: {orders:0, revenue:0} });
 
             currP = groupPortal(currPortal.data);
             prevP = groupPortal(prevPortal.data);
@@ -246,12 +269,12 @@ async function updateSalesStats() {
 
         animateCount(dashboardState.domElements.totalOrders, currP.all.orders);
         updateTrendBadge('orders-trend', currP.all.orders, prevP.all.orders); // 'orders-trend' залишається ID
-        animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders); 
-        animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.white_label.orders); 
+        animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders); // Numotamo
+        animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.internet_bilet.orders + currP.others.orders); // Karabas + MTicket + Internet-Bilet + Інші
         animateCount(dashboardState.domElements.totalRevenue, currP.all.revenue, 1500, ' ₴');
         updateTrendBadge('revenue-trend', currP.all.revenue, prevP.all.revenue); // 'revenue-trend' залишається ID
         animateCount(dashboardState.domElements.revenuePortal, currP.numotamo.revenue, 1500, ' ₴');
-        animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.white_label.revenue, 1500, ' ₴');
+        animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue, 1500, ' ₴'); // Karabas + MTicket + Internet-Bilet + Інші
 
     } catch (err) { console.error("❌ Помилка завантаження фінансової статистики:", err); }
 }
@@ -322,7 +345,8 @@ async function updateSalesCharts() {
                     numo_r:0, numo_o:0, numo_t:0, 
                     kara_r:0, kara_o:0, kara_t:0, 
                     mtic_r:0, mtic_o:0, mtic_t:0, 
-                    white_r:0, white_o:0, white_t:0 
+                    others_r:0, others_o:0, others_t:0, // Змінено на others
+                    ib_r:0, ib_o:0, ib_t:0 // Додано для Internet-Bilet
                 };
                 
                 const rev = parseFloat(row.subtotal_amount) || 0;
@@ -334,8 +358,9 @@ async function updateSalesCharts() {
                 
                 if (sId === window.SELLER_IDS.NUMOTAMO)      { tempMap[d].numo_r += rev; tempMap[d].numo_o += ord; tempMap[d].numo_t += tix; }
                 else if (sId === window.SELLER_IDS.KARABAS)   { tempMap[d].kara_r += rev; tempMap[d].kara_o += ord; tempMap[d].kara_t += tix; }
+                else if (sId === window.SELLER_IDS.INTERNET_BILET) { tempMap[d].ib_r += rev; tempMap[d].ib_o += ord; tempMap[d].ib_t += tix; }
                 else if (sId === window.SELLER_IDS.MTICKET)  { tempMap[d].mtic_r += rev; tempMap[d].mtic_o += ord; tempMap[d].mtic_t += tix; }
-                else if (sId === window.SELLER_IDS.WHITE_LABEL) { tempMap[d].white_r += rev; tempMap[d].white_o += ord; tempMap[d].white_t += tix; }
+                else { tempMap[d].others_r += rev; tempMap[d].others_o += ord; tempMap[d].others_t += tix; } // Всі інші групуємо під "Інші"
             });
             
             Object.entries(tempMap).forEach(([date, val]) => {
@@ -344,7 +369,8 @@ async function updateSalesCharts() {
                     {key: 'numotamo', r: 'numo_r', o: 'numo_o', t: 'numo_t'},
                     {key: 'karabas', r: 'kara_r', o: 'kara_o', t: 'kara_t'},
                     {key: 'mticket', r: 'mtic_r', o: 'mtic_o', t: 'mtic_t'},
-                    {key: 'white_label', r: 'white_r', o: 'white_o', t: 'white_t'}
+                    {key: 'internet_bilet', r: 'ib_r', o: 'ib_o', t: 'ib_t'}, // Додано Internet-Bilet
+                    {key: 'others', r: 'others_r', o: 'others_o', t: 'others_t'} // Змінено на "Інші"
                 ];
                 types.forEach(type => {
                     stats.push({ 
@@ -373,9 +399,8 @@ async function updateSalesCharts() {
             const d = new Date(); d.setDate(d.getDate() - i);
             const iso = d.toISOString().split('T')[0];
             daysMap[iso] = { 
-                label: d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}),
-                // Структура тепер має r (revenue), o (orders) та t (tickets)
-                all: { r: 0, o: 0, t: 0 }, numo: { r: 0, o: 0, t: 0 }, kara: { r: 0, o: 0, t: 0 }, mtic: { r: 0, o: 0, t: 0 }, white: { r: 0, o: 0, t: 0 }
+                label: d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}), // CRITICAL FIX: Додано ib та others
+                all: { r: 0, o: 0, t: 0 }, numo: { r: 0, o: 0, t: 0 }, kara: { r: 0, o: 0, t: 0 }, mtic: { r: 0, o: 0, t: 0 }, ib: { r: 0, o: 0, t: 0 }, others: { r: 0, o: 0, t: 0 }
             };
         }
 
@@ -391,7 +416,7 @@ async function updateSalesCharts() {
             const o = parseInt(row.total_orders) || 0;
             const t = parseInt(row.total_tickets) || 0;
 
-            const mapKey = type === 'white_label' ? 'white' : (type === 'numotamo' ? 'numo' : (type === 'karabas' ? 'kara' : (type === 'mticket' ? 'mtic' : 'all')));
+            const mapKey = type === 'numotamo' ? 'numo' : (type === 'karabas' ? 'kara' : (type === 'mticket' ? 'mtic' : (type === 'internet_bilet' ? 'ib' : 'others'))); // Оновлено для "Інші"
             
             if (daysMap[d][mapKey]) {
                 daysMap[d][mapKey] = { r, o, t };
@@ -412,7 +437,8 @@ async function updateSalesCharts() {
             { name: 'Numotamo',     key: 'numo',  color: window.CHART_COLORS.NUMOTAMO },
             { name: 'Karabas',      key: 'kara',  color: window.CHART_COLORS.KARABAS },
             { name: 'MTicket',      key: 'mtic',  color: window.CHART_COLORS.MTICKET },
-            { name: 'Internet-Bilet',  key: 'white', color: window.CHART_COLORS.WHITE_LABEL }
+            { name: 'Internet-Bilet',  key: 'ib', color: window.CHART_COLORS.INTERNET_BILET },
+            { name: 'Інші', key: 'others', color: window.CHART_COLORS.OTHERS } // Змінено назву та ключ
         ];
 
         // ГРАФІК КВИТКІВ: тепер використовує .t (квитки)
@@ -520,7 +546,8 @@ async function updateOrdersTable() {
             if (id === window.SELLER_IDS.NUMOTAMO) return '<span class="badge text-danger border">Numotamo</span>';
             if (id === window.SELLER_IDS.KARABAS) return '<span class="badge text-warning border">Karabas</span>';
             if (id === window.SELLER_IDS.MTICKET) return '<span class="badge text-info border">MTicket</span>';
-            return '<span class="badge text-light border">Internet-Bilet</span>';
+            if (id === window.SELLER_IDS.INTERNET_BILET) return '<span class="badge text-primary border">Internet-Bilet</span>';
+            return '<span class="badge text-secondary border">Інший продавець</span>'; // Загальний fallback
         };
 
         tbody.innerHTML = (data || []).map(order => {
@@ -1092,7 +1119,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const end = selectedDates.length > 1 ? instance.formatDate(selectedDates[1], "Y-m-d") : start; // Змінено на dashboardState.customDateRange
                     
                     // customDateRange - це глобальна змінна, яка використовується в getDateRange
-                    window.customDateRange = { start, end }; 
+                    dashboardState.customDateRange = { start, end }; // CRITICAL FIX: Використовуємо dashboardState
                     
                     let displayText = instance.formatDate(selectedDates[0], "d.m");
                     if (selectedDates.length > 1) {

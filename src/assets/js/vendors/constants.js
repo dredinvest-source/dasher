@@ -5,8 +5,8 @@
 window.SELLER_IDS = {
     NUMOTAMO: 344460,
     KARABAS: 6617,
-    MTICKET: 59153,
-    // Додайте інші ID продавців за потреби
+    MTICKET: 59153, 
+    INTERNET_BILET: 6618, // Продавець Internet-bilet
 };
 
 window.CHART_COLORS = {
@@ -14,6 +14,6 @@ window.CHART_COLORS = {
     NUMOTAMO: '#fe3502',
     KARABAS: '#ffee5a',
     MTICKET: '#21B3C1',
-    WHITE_LABEL: '#919eab',
-    // Додайте інші кольори за потреби
+    INTERNET_BILET: '#6618B3',
+    OTHERS: '#919eab', // Колір для "Інші" (раніше White Label)
 };
