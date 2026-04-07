@@ -17,7 +17,6 @@ const gulpTerser = require('gulp-terser');
 const uglify = require('gulp-uglify');
 
 // Paths to project folders
-
 const paths = {
   base: {
     base: './',
@@ -25,24 +24,20 @@ const paths = {
   },
   src: {
     basesrc: './src',
-    basesrcfiles: './src/**/*',
     scss: './src/assets/scss/**/*.scss',
     css: './src/assets/css',
-    js: './src/assets/js/**/*.js',
+    js: './src/assets/js/**/*.js', // Всі JS файли
     vendorJs: './src/assets/js/vendors/*.js',
+    appJs: './src/assets/js/app/**/*.js', // ТВОЯ ПАПКА APP
     html: './src/**/*.html',
     images: './src/assets/images/**/*',
     maps: './src/assets/maps/**/*',
     fonts: './src/assets/fonts/**/*',
-    assets: './src/assets/**/*',
-    partials: '.src/partials/**/*',
-  },
-  temp: {
-    basetemp: './.temp',
   },
   dist: {
     basedist: './dist',
     js: './dist/assets/js',
+    appJs: './dist/assets/js/app', // Куди копіювати додаток
     vendorJs: './dist/assets/js/vendors',
     images: './dist/assets/images',
     css: './dist/assets/css',
@@ -53,136 +48,91 @@ const paths = {
 };
 
 // SCSS to CSS
-function scss(callback) {
+function scss() {
   return src(paths.src.scss)
     .pipe(sass().on('error', sass.logError))
     .pipe(gulpautoprefixer())
     .pipe(dest(paths.src.css))
     .pipe(browsersync.stream());
-  callback();
 }
 
-// vendor js
-function vendorJs(callback) {
-  return src(paths.src.vendorJs).pipe(uglify()).pipe(dest(paths.dist.vendorJs));
-  callback();
+// Vendor JS
+function vendorJs() {
+  return src(paths.src.vendorJs)
+    .pipe(uglify())
+    .pipe(dest(paths.dist.vendorJs));
+}
+
+// --- НОВИЙ ТАСК: App Scripts ---
+// Він копіює і мініфікує файли з js/app/
+function scripts() {
+  return src(paths.src.appJs)
+    .pipe(gulpTerser()) // стискаємо код
+    .pipe(dest(paths.dist.appJs)); // зберігаємо структуру папок
+}
+
+// Таск для головного файлу main.js (якщо він у корені js)
+function mainJs() {
+  return src('./src/assets/js/main.js', { allowEmpty: true })
+    .pipe(gulpTerser())
+    .pipe(dest(paths.dist.js));
 }
 
 // Image
-function images(callback) {
-  return src(paths.src.images, {
-    encoding: null, // `null` is used to signify binary encoding
-    buffer: true, // Use buffers for compatibility
-    removeBOM: true, // Remove Byte Order Mark if present
-  }).pipe(dest(paths.dist.images));
-  callback();
+function images() {
+  return src(paths.src.images, { encoding: null, buffer: true })
+    .pipe(dest(paths.dist.images));
 }
 
-// Maps task
-function maps(callback) {
-  return src(paths.src.maps, {
-    encoding: null,
-    buffer: true,
-    removeBOM: true,
-  }).pipe(dest(paths.dist.maps));
-  callback();
+// Maps
+function maps() {
+  return src(paths.src.maps, { encoding: null, buffer: true })
+    .pipe(dest(paths.dist.maps));
 }
 
-// Font task
-function fonts(callback) {
+// Fonts
+function fonts() {
   return src(paths.src.fonts).pipe(dest(paths.dist.fonts));
-  callback();
 }
 
 // HTML
-function html(callback) {
+function html() {
   return src([paths.src.html, '!./src/partials/**/*'])
-    .pipe(
-      fileinclude({
-        prefix: '@@',
-        basepath: '@file',
-      })
-    )
+    .pipe(fileinclude({ prefix: '@@', basepath: '@file' }))
     .pipe(replace(/src="(.{0,10})node_modules/g, 'src="$1assets/libs'))
     .pipe(replace(/href="(.{0,10})node_modules/g, 'href="$1assets/libs'))
     .pipe(useref({ searchPath: ['src', '.'] }))
-    .pipe(cached())
-    .pipe(gulpIf('*.css', postcss([autoprefixer(), cssnano()]))) // PostCSS plugins with cssnano
+    // ПРИБРАНО cached() для білду, щоб завжди бачити зміни
+    .pipe(gulpIf('*.css', postcss([autoprefixer(), cssnano()])))
     .pipe(gulpIf('*.js', gulpTerser()))
-    .pipe(dest(paths.dist.basedist))
-    .pipe(browsersync.stream());
-  callback();
+    .pipe(dest(paths.dist.basedist));
 }
 
-// File include task for temp
-function fileincludeTask(callback) {
-  return src([paths.src.html, '!./src/partials/**/*'])
-    .pipe(
-      fileinclude({
-        prefix: '@@',
-        basepath: '@file',
-      })
-    )
-    .pipe(cached())
-    .pipe(dest(paths.temp.basetemp));
-  callback();
-}
-
-// Copy libs file from nodemodules to dist
-function copyLibs(callback) {
+// Copy libs
+function copyLibs() {
   return src(npmDist(), { base: paths.base.node }).pipe(dest(paths.dist.libs));
-  callback();
 }
 
-// Clean .temp folder
-function cleanTemp(callback) {
-  del.sync(paths.temp.basetemp);
-  callback();
-}
-
-// Clean Dist folder
-function cleanDist(callback) {
+// Clean
+function cleanDist(done) {
   del.sync(paths.dist.basedist);
-  callback();
-}
-
-// Browser Sync Serve
-function browsersyncServe(callback) {
-  browsersync.init({
-    server: {
-      baseDir: [paths.temp.basetemp, paths.src.basesrc, paths.base.base],
-    },
-  });
-  callback();
-}
-
-// SyncReload
-function syncReload(callback) {
-  browsersync.reload();
-  callback();
+  done();
 }
 
 // Watch Task
 function watchTask() {
-  watch(paths.src.html, series(fileincludeTask, syncReload));
-  watch([paths.src.images, paths.src.fonts, paths.src.vendorJs], series(images, fonts, vendorJs));
-  watch([paths.src.scss], series(scss, syncReload));
+  browsersync.init({
+    server: { baseDir: [paths.src.basesrc, './'] },
+  });
+  watch(paths.src.html, series(html, browsersync.reload));
+  watch(paths.src.scss, series(scss, browsersync.reload));
+  watch(paths.src.appJs, series(scripts, browsersync.reload));
 }
 
-// Default Task Preview
-exports.default = series(fileincludeTask, browsersyncServe, watchTask);
+// --- Експорт тасків ---
+exports.build = series(
+  cleanDist, 
+  parallel(html, scripts, mainJs, images, maps, fonts, vendorJs, copyLibs)
+);
 
-// Build Task for Dist
-exports.build = series(parallel(cleanDist), html, images, maps, fonts, vendorJs, copyLibs, cleanTemp);
-
-// export tasks
-exports.scss = scss;
-exports.vendorJs = vendorJs;
-exports.images = images;
-exports.maps = maps;
-exports.fonts = fonts;
-exports.html = html;
-exports.fileincludeTask = fileincludeTask;
-exports.copyLibs = copyLibs;
-exports.cleanTemp = cleanTemp;
-exports.cleanDist = cleanDist;
+exports.default = series(scss, html, watchTask);
