@@ -2,9 +2,6 @@
 // 0. ІНІЦІАЛІЗАЦІЯ СТАНУ ТА КОНСТАНТ
 // ========================================================================= //
 
-// Імпорт констант (припускаємо, що constants.js доступний глобально або через Gulp)
-// Якщо ви використовуєте ES Modules, це було б: import { SELLER_IDS, CHART_COLORS } from '../config/constants.js';
-// Для поточної структури, вони будуть доступні глобально після завантаження constants.js
 
 /**
  * Об'єкт стану дашборду для інкапсуляції глобальних змінних.
@@ -28,6 +25,28 @@ const dashboardState = {
     },
     domElements: {} // Для кешування часто використовуваних DOM-елементів
 };
+
+// ========================================================================= //
+// 1. ДОПОМІЖНІ ФУНКЦІЇ 
+// ========================================================================= //
+
+// Функція для отримання ID промоутерів масивом
+function getPromoterIds() { // Використовує dashboardState.userPermissions
+    let pids = dashboardState.userPermissions?.promoter_id;
+    if (pids == null) return null;
+    
+    if (typeof pids === 'string') {
+        try { pids = JSON.parse(pids); } catch(e) { pids = pids.split(',').map(s => s.trim()); }
+    } else if (typeof pids === 'number') {
+        pids = [pids];
+    }
+    
+    if (Array.isArray(pids)) {
+        const arr = pids.map(id => Number(id)).filter(id => !isNaN(id) && id > 0);
+        return arr.length > 0 ? arr : null;
+    }
+    return null;
+}
 
 // ========================================================================= //
 // 1. ДОПОМІЖНІ ФУНКЦІЇ
@@ -140,20 +159,15 @@ const renderOrUpdateChart = (elementId, seriesArray, categories, colors, isCurre
 // ========================================================================= //
 async function updateSalesStats() {
     const { start, end, prevStart, prevEnd } = getDateRange();
+    const pids = getPromoterIds();
 
     try {
-        const response = await fetch(`/api/dashboard/sales-stats?start_date=${start}&end_date=${end}&prev_start_date=${prevStart}&prev_end_date=${prevEnd}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to fetch sales stats');
-
         let currP, prevP; // Об'єкти для зберігання агрегованих даних
 
-        if (data.promoter_mode) {
+        if (pids) {
             // Промоутер: витягуємо всі замовлення і групуємо по seller_id (логіка перенесена з fetchAllOrders)
-            const currData = data.current;
-            const prevData = data.previous;
+            const currData = await fetchAllOrders(pids, start, end, 'tickets_count, subtotal_amount, seller_id');
+            const prevData = await fetchAllOrders(pids, prevStart, prevEnd, 'tickets_count, subtotal_amount, seller_id');
 
             const groupRawOrders = (data) => (data || []).reduce((acc, row) => {
                 const rev = parseFloat(row.subtotal_amount) || 0;
@@ -181,8 +195,11 @@ async function updateSalesStats() {
 
         } else {
             // Адмін: дані вже агреговані бекендом
-            const currPortal = data.current;
-            const prevPortal = data.previous;
+            const [currPortal, prevPortal] = await Promise.all([
+                supabaseClient.from('portal_sales_daily').select('*').gte('visit_date', start).lte('visit_date', end),
+                supabaseClient.from('portal_sales_daily').select('*').gte('visit_date', prevStart).lte('visit_date', prevEnd)
+            ]);
+
             const groupPortal = (data) => (data || []).reduce((acc, row) => {
                 const type = row.report_type;
                 const orders = (Number(row.total_orders) || 0);
@@ -212,8 +229,8 @@ async function updateSalesStats() {
                 return acc;
             }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, internet_bilet: {orders:0, revenue:0}, others: {orders:0, revenue:0} });
 
-            currP = groupPortal(currPortal);
-            prevP = groupPortal(prevPortal);
+            currP = groupPortal(currPortal.data);
+            prevP = groupPortal(prevPortal.data);
         }
 
         // Кешування DOM-елементів
@@ -241,17 +258,18 @@ async function updateSalesStats() {
 async function updateGeneralStats() {
     try {
         const { start, end, prevStart, prevEnd } = getDateRange();
+        const pids = getPromoterIds();
 
-        const response = await fetch(`/api/dashboard/general-stats?start_date=${start}&end_date=${end}&prev_start_date=${prevStart}&prev_end_date=${prevEnd}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to fetch general stats');
+        let currQuery = supabaseClient.from('google_analytics_daily').select('total_users, user_type').gte('visit_date', start).lte('visit_date', end);
+        let prevQuery = supabaseClient.from('google_analytics_daily').select('total_users').gte('visit_date', prevStart).lte('visit_date', prevEnd);
 
-        const currRes = { data: data.current };
-        const prevRes = { data: data.previous };
+        if(pids) {
+            currQuery = currQuery.in('promoter_id', pids);
+            prevQuery = prevQuery.in('promoter_id', pids);
+        }
 
-        // if (currRes.error) throw currRes.error; // Error handling is now done by the fetch above
+        const [currRes, prevRes] = await Promise.all([currQuery, prevQuery]);
+        if (currRes.error) throw currRes.error;
 
         let total = 0, newUsers = 0, returningUsers = 0;
         currRes.data?.forEach(row => {
@@ -281,17 +299,16 @@ async function updateSalesCharts() {
     const chartStartDate = new Date(); 
     chartStartDate.setDate(chartStartDate.getDate() - 29);
     const chartStartISO = chartStartDate.toISOString().split('T')[0];
+    const pids = getPromoterIds();
 
     try {
         let stats = [];
-        const response = await fetch(`/api/dashboard/sales-charts?chart_start_date=${chartStartISO}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to fetch sales charts data');
 
-        if (data.promoter_mode) {
-            // Промоутер: дані вже отримані з бекенду, агрегуємо їх тут
+        if (pids) {
+            const data = await fetchAllOrders(pids, chartStartISO, null, 'visit_date, subtotal_amount, tickets_count, seller_id');
+
+            // Промоутер: витягуємо всі замовлення і групуємо по seller_id
+            // const tempMap = {}; // Ця логіка вже була, просто переконайтесь, що вона працює з `data`
 
             const tempMap = {};
             data.forEach(row => {
@@ -351,9 +368,14 @@ async function updateSalesCharts() {
             });
 
         } else {
-            stats = data.data; // Дані вже агреговані бекендом
-        }
+            const { data, error } = await supabaseClient
+                .from('portal_sales_daily')
+                .select('visit_date, total_revenue, total_orders, total_tickets, report_type')
+                .gte('visit_date', chartStartISO);
 
+            if (error) throw error;
+            stats = data;
+        }
         const daysMap = {};
         for (let i = 29; i >= 0; i--) {
             const d = new Date(); d.setDate(d.getDate() - i);
@@ -429,13 +451,13 @@ async function updateSalesCharts() {
 async function updateDeviceStats() {
     try {
         const { start, end } = getDateRange();
+        const pids = getPromoterIds();
+        
+        let query = supabaseClient.from('device_stats').select('device_category, total_users').gte('visit_date', start).lte('visit_date', end);
+        if(pids) query = query.in('promoter_id', pids);
 
-        const response = await fetch(`/api/dashboard/device-stats?start_date=${start}&end_date=${end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to fetch device stats');
-        // if (error) throw error; // Error handling is now done by the fetch above
+        const { data, error } = await query;
+        if (error) throw error;
 
         const stats = { mobile: 0, desktop: 0, tablet: 0, "smart tv": 0 };
         data.forEach(item => {
@@ -488,18 +510,21 @@ async function updateOrdersTable() {
         const tbody = dashboardState.domElements.ordersTableBody = dashboardState.domElements.ordersTableBody || document.getElementById('orders-table-body');
         if (!tbody) return;
         
-        const response = await fetch(`/api/dashboard/orders-table?start_date=${start}&end_date=${end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch recent orders');
+        let query = supabaseClient.from('orders')
+            .select('*')
+            .gte('visit_date', start)
+            .lte('visit_date', end)
+            .order('date_created', { ascending: false })
+            .limit(10);
+            
+        const pids = getPromoterIds();
+        if (pids) query = query.in('promoterId', pids);
 
-        const data = result.data;
-        // if (error) throw error; // Error handling is now done by the fetch above
+        const { data, error } = await query;
+        if (error) throw error;
 
         const getSellerName = (sellerId) => {
             const id = Number(sellerId);
-            // Використовуємо window.SELLER_IDS, які мають бути визначені в constants.js
             if (id === window.SELLER_IDS.NUMOTAMO) return '<span class="badge text-danger border">Numotamo</span>'; 
             if (id === window.SELLER_IDS.KARABAS) return '<span class="badge text-warning border">Karabas</span>';
             if (id === window.SELLER_IDS.MTICKET) return '<span class="badge text-info border">MTicket</span>';
@@ -522,14 +547,14 @@ async function updateCityStats() {
     try {
         const { start, end } = getDateRange();
         const container = dashboardState.domElements.citiesList = dashboardState.domElements.citiesList || document.getElementById('cities-list');
-        if (!container) return; // if (!container) return;
+        if (!container) return;
+        const pids = getPromoterIds();
 
-        const response = await fetch(`/api/dashboard/city-stats?start_date=${start}&end_date=${end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch city stats');
-        const data = result.data;
+        let query = supabaseClient.from('city_stats').select('city_ua, city_name, total_users, region_code, region_ua').gte('visit_date', start).lte('visit_date', end);
+        if(pids) query = query.in('promoter_id', pids);
+
+        const { data, error } = await query;
+        if (error) throw error;
 
         const cityData = {}; const mapData = {};
 
@@ -606,13 +631,13 @@ function renderUkraineMap(dbData) {
 async function updateGenderStats() {
     try {
         const { start, end } = getDateRange();
+        const pids = getPromoterIds();
 
-        const response = await fetch(`/api/dashboard/gender-stats?start_date=${start}&end_date=${end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch gender stats');
-        const data = result.data;
+        let query = supabaseClient.from('gender_stats').select('user_gender, total_users').gte('visit_date', start).lte('visit_date', end);
+        if(pids) query = query.in('promoter_id', pids);
+
+        const { data, error } = await query;
+        if (error) throw error;
 
         const aggregated = { male: 0, female: 0, unknown: 0 };
         data.forEach(item => {
@@ -665,14 +690,13 @@ async function updateTopEventsTable() {
         const tbody = dashboardState.domElements.topEventsBody = dashboardState.domElements.topEventsBody || document.getElementById('top-events-body');
         if (!tbody) return;
 
-        const response = await fetch(`/api/dashboard/top-events?start_date=${start}&end_date=${end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch top events');
-        const data = result.data;
-        const eventsMap = (data || []).reduce((acc, order) => { // data is already aggregated by backend
-            const name = order.title ? order.title.trim() : 'Невідома подія'; // title is already trimmed on backend
+        const pids = getPromoterIds();
+        
+        // ФІКС: Тепер і адмін, і промоутер використовують пагінацію, щоб не впиратися в ліміт 1000 подій
+        const data = await fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count');
+
+        const eventsMap = (data || []).reduce((acc, order) => {
+            const name = order.title ? order.title.trim() : 'Невідома подія';
             if (!acc[name]) acc[name] = { tickets: 0, totalRevenue: 0 };
             
             // В таблиці заходів ми все ще чесно рахуємо квитки, бо там стоїть "шт."
@@ -680,8 +704,8 @@ async function updateTopEventsTable() {
             acc[name].totalRevenue += parseFloat(order.subtotal_amount) || 0;
             return acc;
         }, {});
-
-        const topEvents = Object.entries(eventsMap).map(([title, stats]) => ({ title, ...stats })).sort((a, b) => b.tickets - a.tickets).slice(0, 10); // Data is already sorted and sliced by backend
+        
+        const topEvents = Object.entries(eventsMap).map(([title, stats]) => ({ title, ...stats })).sort((a, b) => b.tickets - a.tickets).slice(0, 10);
 
         tbody.innerHTML = topEvents.map(event => `<tr><td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${event.title}</span></td><td>${event.tickets} шт.</td><td class="fw-bold">${event.totalRevenue.toLocaleString('uk-UA')} ₴</td></tr>`).join('');
     } catch (err) { console.error("❌ Помилка завантаження топу подій:", err); }
@@ -692,14 +716,14 @@ async function updateTopEventsTable() {
 // ========================================================================= //
 async function updateTrafficPerformance() {
     const period = getDateRange();
+    const pids = getPromoterIds();
 
     try {
-        const response = await fetch(`/api/dashboard/traffic-performance?start_date=${period.start}&end_date=${period.end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch traffic performance data');
-        const trafficData = result.data;
+        let query = supabaseClient.from('traffic_sources_stats').select('*').gte('visit_date', period.start).lte('visit_date', period.end).order('visit_date', { ascending: true });
+        if(pids) query = query.in('promoter_id', pids);
+
+        const { data: trafficData, error } = await query;
+        if (error) throw error;
 
         if (!trafficData || trafficData.length === 0) {
             if (dashboardState.domElements.trafficStatTotalUsers) dashboardState.domElements.trafficStatTotalUsers.innerText = '0';
@@ -744,14 +768,14 @@ function renderTrafficGroupedBarChart(series, categories) {
 async function updateSEOCharts() {
     const chartStartDate = new Date(); chartStartDate.setDate(chartStartDate.getDate() - 29);
     const chartStartISO = chartStartDate.toISOString().split('T')[0];
+    const pids = getPromoterIds();
 
     try {
-        const response = await fetch(`/api/dashboard/seo-charts?chart_start_date=${chartStartISO}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch SEO charts data');
-        const stats = result.data;
+        let query = supabaseClient.from('seo_performance_daily').select('*').gte('visit_date', chartStartISO);
+        if(pids) query = query.in('prom_id', pids);
+
+        const { data: stats, error } = await query;
+        if (error) throw error;
 
         const daysMap = {};
         for (let i = 29; i >= 0; i--) {
@@ -829,15 +853,15 @@ function renderSEOPerformanceChart(series, labels) {
 async function updateCountryStats() {
     try {
         const { start, end } = getDateRange();
+        const pids = getPromoterIds();
         const container = dashboardState.domElements.countriesList = dashboardState.domElements.countriesList || document.getElementById('countries-list');
         if (!container) return;
 
-        const response = await fetch(`/api/dashboard/country-stats?start_date=${start}&end_date=${end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch country stats');
-        const data = result.data;
+        let query = supabaseClient.from('country_stats').select('country_name, country_code, total_users').gte('visit_date', start).lte('visit_date', end);
+        if(pids) query = query.in('promoter_id', pids);
+
+        const { data, error } = await query;
+        if (error) throw error;
 
         const aggregated = {};
         data.forEach(item => {
@@ -879,16 +903,15 @@ function renderWorldMap(dataValues) {
 async function updateConversionFunnelChart() {
     const period = getDateRange();
     const pids = getPromoterIds();
-    const container = dashboardState.domElements.funnelChart = dashboardState.domElements.funnelChart || document.getElementById('funnelChart'); // container is already defined
-    if (!container) return; // if (!container) return;
+    const container = dashboardState.domElements.funnelChart = dashboardState.domElements.funnelChart || document.getElementById('funnelChart');
+    if (!container) return;
 
     try {
-        const response = await fetch(`/api/dashboard/conversion-funnel?start_date=${period.start}&end_date=${period.end}`, {
-            headers: { 'X-Telegram-Init-Data': window.Telegram?.WebApp?.initData || '' }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to fetch conversion funnel data');
-        const data = result.data;
+        let query = supabaseClient.from('conversion_funnel_daily').select('*').gte('visit_date', period.start).lte('visit_date', period.end).order('visit_date', { ascending: true });
+        if(pids) query = query.in('promoter_id', pids);
+
+        const { data, error } = await query;
+        if (error) throw error;
         
         if (!data || data.length === 0) return;
 
@@ -934,22 +957,36 @@ function renderFunnelChart(data, categories) {
 // 12. СИСТЕМА ДОСТУПУ (PERMISSIONS), REALTIME ТА ЗАПУСК
 // ========================================================================= //
 
-// function subscribeToOrders() {
-//     // Realtime підписка через Supabase з фронтенду все ще розкриває Supabase URL та KEY у мережевих запитах.
-//     // Для повної безпеки, це має бути реалізовано через бекенд (наприклад, WebSocket сервер).
-//     // Наразі, для уникнення помилок після видалення supabaseClient, цей функціонал відключено.
-//     // Якщо вам потрібні realtime оновлення, розгляньте реалізацію WebSocket на PHP бекенді.
-//     if (dashboardState.isSubscribed) return;
-//     console.warn('Realtime updates are currently disabled for security reasons. Consider implementing a backend WebSocket for this feature.');
-//     // supabaseClient.channel('schema-db-changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
-//     //     console.log('🔔 Нове замовлення!');
-//     //     if (dashboardState.userPermissions?.recent_orders) updateOrdersTable();
-//     //     if (dashboardState.userPermissions?.sales_charts) updateSalesCharts();
-//     //     if (dashboardState.userPermissions?.top_events) updateTopEventsTable();
-//     //     if (dashboardState.userPermissions?.top_stats) { updateGeneralStats(); updateSalesStats(); }
-//     // }).subscribe();
-//     // dashboardState.isSubscribed = true;
-// }
+function subscribeToOrders() {
+    if (dashboardState.isSubscribed) return; 
+    supabaseClient.channel('schema-db-changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
+        console.log('🔔 Нове замовлення!');
+        if (dashboardState.userPermissions?.recent_orders) updateOrdersTable(); 
+        if (dashboardState.userPermissions?.sales_charts) updateSalesCharts(); 
+        if (dashboardState.userPermissions?.top_events) updateTopEventsTable(); 
+        if (dashboardState.userPermissions?.top_stats) { updateGeneralStats(); updateSalesStats(); }
+    }).subscribe();
+    dashboardState.isSubscribed = true;
+}
+
+// Функція обходу ліміту 1000 рядків Supabase для таблиці orders
+async function fetchAllOrders(pids, startDate, endDate, selectStr = 'visit_date, subtotal_amount, tickets_count, title, seller_id') {
+    let allData = [];
+    let offset = 0;
+    const limit = 1000;
+    while (true) {
+        let q = supabaseClient.from('orders').select(selectStr).gte('visit_date', startDate);
+        if (endDate) q = q.lte('visit_date', endDate);
+        if (pids) q = q.in('promoterId', pids);
+        q = q.range(offset, offset + limit - 1);
+        const { data, error } = await q;
+        if (error) { console.error("Помилка завантаження orders:", error); break; }
+        allData = allData.concat(data);
+        if (data.length < limit) break; 
+        offset += limit;
+    }
+    return allData;
+}
 
 window.changeDashboardPeriod = function(period, label) {
     dashboardState.currentPeriod = period;
@@ -1019,7 +1056,7 @@ async function authenticateAndInit() {
             promoter_id: null, dashboard: true, top_stats: true, sales_charts: true, users: true, devices: true, recent_orders: true, 
             cities: true, gender: true, top_events: true, traffic_seo: true, countries: true, funnel: true
         };
-        initDashboard(); subscribeToOrders(); return;
+        initDashboard(); subscribeToOrders(); return; // Змінено на dashboardState.userPermissions
     }
     
     const userId = tgUser.id; const firstName = tgUser.first_name;
@@ -1044,19 +1081,9 @@ async function authenticateAndInit() {
     if (dashboardState.domElements.userGreetingName) dashboardState.domElements.userGreetingName.innerText = firstName;
     
     applyPermissionsToUI(dashboardState.userPermissions);
-    initDashboard(); // Запускаємо ініціалізацію дашборду
-    // subscribeToOrders(); // Realtime підписка тимчасово відключена
+    initDashboard();
+    subscribeToOrders();
 
-}
-
-// Функція для отримання ID промоутерів масивом (залишаємо, але вона більше не використовується для запитів до Supabase напряму)
-function getPromoterIds() { // Використовує dashboardState.userPermissions
-    let pids = dashboardState.userPermissions?.promoter_id;
-    if (pids == null) return null;
-    if (typeof pids === 'string') { try { pids = JSON.parse(pids); } catch(e) { pids = pids.split(',').map(s => s.trim()); } }
-    else if (typeof pids === 'number') { pids = [pids]; }
-    if (Array.isArray(pids)) { const arr = pids.map(id => Number(id)).filter(id => !isNaN(id) && id > 0); return arr.length > 0 ? arr : null; }
-    return null;
 }
 
 document.addEventListener('DOMContentLoaded', authenticateAndInit);
