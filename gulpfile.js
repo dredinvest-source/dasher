@@ -32,6 +32,7 @@ const paths = {
     vendorJs: './src/assets/js/vendors/*.js',
     html: './src/**/*.html',
     images: './src/assets/images/**/*',
+    maps: './src/assets/maps/**/*',
     fonts: './src/assets/fonts/**/*',
     assets: './src/assets/**/*',
     partials: '.src/partials/**/*',
@@ -47,6 +48,7 @@ const paths = {
     css: './dist/assets/css',
     fonts: './dist/assets/fonts',
     libs: './dist/assets/libs',
+    maps: './dist/assets/maps',
   },
 };
 
@@ -76,6 +78,16 @@ function images(callback) {
   callback();
 }
 
+// Maps task
+function maps(callback) {
+  return src(paths.src.maps, {
+    encoding: null,
+    buffer: true,
+    removeBOM: true,
+  }).pipe(dest(paths.dist.maps));
+  callback();
+}
+
 // Font task
 function fonts(callback) {
   return src(paths.src.fonts).pipe(dest(paths.dist.fonts));
@@ -93,7 +105,7 @@ function html(callback) {
     )
     .pipe(replace(/src="(.{0,10})node_modules/g, 'src="$1assets/libs'))
     .pipe(replace(/href="(.{0,10})node_modules/g, 'href="$1assets/libs'))
-    .pipe(useref())
+    .pipe(useref({ searchPath: ['src', '.'] }))
     .pipe(cached())
     .pipe(gulpIf('*.css', postcss([autoprefixer(), cssnano()]))) // PostCSS plugins with cssnano
     .pipe(gulpIf('*.js', gulpTerser()))
@@ -161,12 +173,13 @@ function watchTask() {
 exports.default = series(fileincludeTask, browsersyncServe, watchTask);
 
 // Build Task for Dist
-exports.build = series(parallel(cleanDist), html, images, fonts, vendorJs, copyLibs, cleanTemp);
+exports.build = series(parallel(cleanDist), html, images, maps, fonts, vendorJs, copyLibs, cleanTemp);
 
 // export tasks
 exports.scss = scss;
 exports.vendorJs = vendorJs;
 exports.images = images;
+exports.maps = maps;
 exports.fonts = fonts;
 exports.html = html;
 exports.fileincludeTask = fileincludeTask;
