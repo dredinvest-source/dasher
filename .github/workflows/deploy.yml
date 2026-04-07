@@ -30,7 +30,7 @@ jobs:
         with:
           switches: -avzr --delete
           path: ./dist/
-          remote_path: /root/my_files/dashboard/dasher-1.0.1
+          remote_path: /root/my_files/dashboard/dasher-1.0.0
           remote_host: 81.17.100.94
           remote_user: root
           remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
