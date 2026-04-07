@@ -42,7 +42,7 @@ jobs:
         with:
           switches: -avzr --delete
           path: ./backend/ # Припустимо, ваш бекенд знаходиться в папці 'backend'
-          remote_path: /root/my_files/dashboard/api # Шлях на VPS для бекенду
+          remote_path: /root/my_files/dashboard/dasher-1.0.0/api # Шлях на VPS для бекенду
           remote_host: 81.17.100.94
           remote_user: root
           remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
