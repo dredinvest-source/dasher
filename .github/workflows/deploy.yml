@@ -3,7 +3,7 @@ name: prod-deploy
 on:
   push:
     branches:
-      - main # Workflow запускається автоматично при пуші в гілку main
+      - main
 
 jobs:
   build-and-deploy:
@@ -34,7 +34,6 @@ jobs:
           remote_host: 81.17.100.94
           remote_user: root
           remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # КРИТИЧНО: Додаємо пароль ключа для rsync
           remote_key_pass: ${{ secrets.SSH_PASSPHRASE }}
 
       - name: Post-deploy confirmation
@@ -43,7 +42,6 @@ jobs:
           host: 81.17.100.94
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # КРИТИЧНО: Додаємо пароль ключа для SSH команд
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             echo "🚀 Деплой у /root/my_files/dashboard/dasher-1.0.1 завершено успішно!"
