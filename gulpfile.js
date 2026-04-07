@@ -132,7 +132,7 @@ function watchTask() {
 // --- Експорт тасків ---
 exports.build = series(
   cleanDist, 
-  parallel(html, scripts, mainJs, images, maps, fonts, vendorJs, copyLibs)
+  parallel(html, scripts, mainJs, images, maps, fonts, vendorJs, copyLibs) // supabase.js більше не потрібен
 );
 
 exports.default = series(scss, html, watchTask);
