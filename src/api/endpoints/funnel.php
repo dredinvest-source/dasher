@@ -23,7 +23,8 @@ if ($cached) {
 
 try {
     $params = [
-        'visit_date' => "gte.$start,lte.$end",
+        'visit_date' => "gte.$start",
+        'visit_date' => "lte.$end",
         'select' => 'views, booking_view, carts, checkouts, purchases'
     ];
 

@@ -95,9 +95,9 @@ function fonts() {
   return src(paths.src.fonts).pipe(dest(paths.dist.fonts));
 }
 
-// API (copy PHP files)
+// API (copy PHP files, excluding .env)
 function api() {
-  return src('./src/api/**/*', { encoding: false })
+  return src(['./src/api/**/*', '!./src/api/.env'], { encoding: false })
     .pipe(dest(paths.dist.basedist + '/api'));
 }
 
