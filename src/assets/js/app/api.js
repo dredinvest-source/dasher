@@ -49,6 +49,11 @@ window.SupabaseApp = window.SupabaseApp || {};
   }
 
   global.SupabaseApp.api = { getPromoterIds, fetchAllOrders };
-  window.getPromoterIds = getPromoterIds;
-  window.fetchAllOrders = fetchAllOrders;
+    window.getPromoterIds = function() {
+      return window.SupabaseApp.utils.getPromoterIds(window.userPermissions);
+    };
+    
+    window.fetchAllOrders = function(pids, startDate, endDate, selectStr) {
+      return window.SupabaseApp.utils.fetchAllOrders(window.supabaseClient, pids, startDate, endDate, selectStr);
+    };
 })(window);

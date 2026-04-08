@@ -69,5 +69,11 @@ window.SupabaseApp = window.SupabaseApp || {};
   }
 
   global.SupabaseApp.dateUtils = { getDateRange, formatDate };
-  window.getDateRange = getDateRange;
+    window.formatDate = function(d) {
+      return window.SupabaseApp.utils.formatDate(d);
+    };
+    
+    window.getDateRange = function() {
+      return window.SupabaseApp.utils.getDateRange(window.currentPeriod, window.customDateRange);
+    };
 })(window);
