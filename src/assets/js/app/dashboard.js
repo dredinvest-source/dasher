@@ -30,50 +30,8 @@ const dashboardState = {
 };
 
 // ========================================================================= //
-// 1. ДОПОМІЖНІ ФУНКЦІЇ 
+// 1. ДОПОМІЖНІ ФУНКЦІЇ
 // ========================================================================= //
-
-// Функція для отримання ID промоутерів масивом
-function getPromoterIds() { // Використовує dashboardState.userPermissions
-    let pids = dashboardState.userPermissions?.promoter_id;
-    if (pids == null) return null;
-    
-    if (typeof pids === 'string') {
-        try { pids = JSON.parse(pids); } catch(e) { pids = pids.split(',').map(s => s.trim()); }
-    } else if (typeof pids === 'number') {
-        pids = [pids];
-    }
-    
-    if (Array.isArray(pids)) {
-        const arr = pids.map(id => Number(id)).filter(id => !isNaN(id) && id > 0);
-        return arr.length > 0 ? arr : null;
-    }
-    return null;
-}
-
-// Функція обходу ліміту 1000 рядків Supabase для таблиці orders
-async function fetchAllOrders(pids, startDate, endDate, selectStr = 'visit_date, subtotal_amount, tickets_count, title, seller_id') {
-    let allData = [];
-    let offset = 0;
-    const limit = 1000;
-    while (true) {
-        let q = supabaseClient.from('orders').select(selectStr).gte('visit_date', startDate);
-        if (endDate) q = q.lte('visit_date', endDate);
-        if (pids) q = q.in('promoterId', pids);
-        
-        q = q.range(offset, offset + limit - 1);
-        
-        const { data, error } = await q;
-        if (error) {
-            console.error("Помилка завантаження orders:", error);
-            break;
-        }
-        allData = allData.concat(data);
-        if (data.length < limit) break; 
-        offset += limit;
-    }
-    return allData;
-}
 
 function getDateRange() {
     const now = new Date();
@@ -158,7 +116,7 @@ function updateTrendBadge(elementId, current, previous) {
 
 const renderOrUpdateChart = (elementId, seriesArray, categories, colors, isCurrency) => {
     const options = {
-        series: seriesArray, 
+        series: seriesArray,
         chart: { height: 350, type: 'area', toolbar: { show: false }, fontFamily: 'Public Sans, serif', sparkline: { enabled: false } },
         colors: colors, dataLabels: { enabled: false }, stroke: { curve: 'smooth', width: 2 },
         fill: { type: 'gradient', gradient: { opacityFrom: 0.6, opacityTo: 0.1 } },
@@ -182,79 +140,18 @@ const renderOrUpdateChart = (elementId, seriesArray, categories, colors, isCurre
 // ========================================================================= //
 async function updateSalesStats() {
     const { start, end, prevStart, prevEnd } = getDateRange();
-    const pids = getPromoterIds();
 
     try {
-        let currP, prevP;
+        // Get stats from PHP API
+        const statsData = await getStats('sales', start, end, prevStart, prevEnd);
 
-        if (pids) {
-            // Промоутер: витягуємо всі замовлення і групуємо по seller_id
-            const currData = await fetchAllOrders(pids, start, end, 'tickets_count, subtotal_amount, seller_id');
-            const prevData = await fetchAllOrders(pids, prevStart, prevEnd, 'tickets_count, subtotal_amount, seller_id');
-
-            const groupRawOrders = (data) => (data || []).reduce((acc, row) => {
-                const rev = parseFloat(row.subtotal_amount) || 0;
-                const sId = Number(row.seller_id);
-                
-                acc.all.orders += 1; 
-                acc.all.revenue += rev;
-                
-                if (sId === window.SELLER_IDS.NUMOTAMO) {
-                    acc.numotamo.orders += 1; acc.numotamo.revenue += rev;
-                } else if (sId === window.SELLER_IDS.KARABAS) {
-                    acc.karabas.orders += 1; acc.karabas.revenue += rev;
-                } else if (sId === window.SELLER_IDS.MTICKET) {
-                    acc.mticket.orders += 1; acc.mticket.revenue += rev;
-                } else if (sId === window.SELLER_IDS.INTERNET_BILET) {
-                    acc.internet_bilet.orders += 1; acc.internet_bilet.revenue += rev;
-                } else {
-                    acc.others.orders += 1; acc.others.revenue += rev;
-                }
-                return acc;
-            }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, internet_bilet: {orders:0, revenue:0}, others: {orders:0, revenue:0} });
-
-            currP = groupRawOrders(currData);
-            prevP = groupRawOrders(prevData);
-
-        } else {
-            // Адмін: беремо з агрегованої таблиці
-            const [currPortal, prevPortal] = await Promise.all([
-                supabaseClient.from('portal_sales_daily').select('*').gte('visit_date', start).lte('visit_date', end),
-                supabaseClient.from('portal_sales_daily').select('*').gte('visit_date', prevStart).lte('visit_date', prevEnd)
-            ]);
-
-            const groupPortal = (data) => (data || []).reduce((acc, row) => {
-                const type = row.report_type;
-                const orders = (Number(row.total_orders) || 0);
-                const revenue = (Number(row.total_revenue) || 0);
-
-                // Ensure all expected keys exist in the accumulator
-                if (!acc.all) acc.all = { orders: 0, revenue: 0 };
-                if (!acc.numotamo) acc.numotamo = { orders: 0, revenue: 0 };
-                if (!acc.karabas) acc.karabas = { orders: 0, revenue: 0 };
-                if (!acc.mticket) acc.mticket = { orders: 0, revenue: 0 };
-                if (!acc.internet_bilet) acc.internet_bilet = { orders: 0, revenue: 0 };
-                if (!acc.others) acc.others = { orders: 0, revenue: 0 };
-
-                if (type === 'all') {
-                    acc.all.orders += orders; acc.all.revenue += revenue;
-                } else if (type === 'numotamo') {
-                    acc.numotamo.orders += orders; acc.numotamo.revenue += revenue;
-                } else if (type === 'karabas') {
-                    acc.karabas.orders += orders; acc.karabas.revenue += revenue;
-                } else if (type === 'mticket') {
-                    acc.mticket.orders += orders; acc.mticket.revenue += revenue;
-                } else if (type === 'internet_bilet') {
-                    acc.internet_bilet.orders += orders; acc.internet_bilet.revenue += revenue;
-                } else if (type === 'others') {
-                    acc.others.orders += orders; acc.others.revenue += revenue;
-                }
-                return acc;
-            }, { all: {orders:0, revenue:0}, numotamo: {orders:0, revenue:0}, karabas: {orders:0, revenue:0}, mticket: {orders:0, revenue:0}, internet_bilet: {orders:0, revenue:0}, others: {orders:0, revenue:0} });
-
-            currP = groupPortal(currPortal.data);
-            prevP = groupPortal(prevPortal.data);
+        if (!statsData) {
+            console.error("❌ Failed to load sales stats");
+            return;
         }
+
+        const currP = statsData.current;
+        const prevP = statsData.previous;
 
         // Кешування DOM-елементів
         dashboardState.domElements.totalOrders = dashboardState.domElements.totalOrders || document.getElementById('total-orders');
@@ -267,13 +164,13 @@ async function updateSalesStats() {
         dashboardState.domElements.revenueGa = dashboardState.domElements.revenueGa || document.getElementById('revenue-ga');
 
         animateCount(dashboardState.domElements.totalOrders, currP.all.orders);
-        updateTrendBadge('orders-trend', currP.all.orders, prevP.all.orders); // 'orders-trend' залишається ID
-        animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders); // Numotamo
-        animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.internet_bilet.orders + currP.others.orders); // Karabas + MTicket + Internet-Bilet + Інші
+        updateTrendBadge('orders-trend', currP.all.orders, prevP.all.orders);
+        animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders);
+        animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.internet_bilet.orders + currP.others.orders);
         animateCount(dashboardState.domElements.totalRevenue, currP.all.revenue, 1500, ' ₴');
-        updateTrendBadge('revenue-trend', currP.all.revenue, prevP.all.revenue); // 'revenue-trend' залишається ID
+        updateTrendBadge('revenue-trend', currP.all.revenue, prevP.all.revenue);
         animateCount(dashboardState.domElements.revenuePortal, currP.numotamo.revenue, 1500, ' ₴');
-        animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue, 1500, ' ₴'); // Karabas + MTicket + Internet-Bilet + Інші
+        animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue, 1500, ' ₴');
 
     } catch (err) { console.error("❌ Помилка завантаження фінансової статистики:", err); }
 }
@@ -281,27 +178,16 @@ async function updateSalesStats() {
 async function updateGeneralStats() {
     try {
         const { start, end, prevStart, prevEnd } = getDateRange();
-        const pids = getPromoterIds();
 
-        let currQuery = supabaseClient.from('google_analytics_daily').select('total_users, user_type').gte('visit_date', start).lte('visit_date', end);
-        let prevQuery = supabaseClient.from('google_analytics_daily').select('total_users').gte('visit_date', prevStart).lte('visit_date', prevEnd);
+        const statsData = await getStats('general', start, end, prevStart, prevEnd);
 
-        if(pids) {
-            currQuery = currQuery.in('promoter_id', pids);
-            prevQuery = prevQuery.in('promoter_id', pids);
+        if (!statsData) {
+            console.error("❌ Failed to load general stats");
+            return 0;
         }
 
-        const [currRes, prevRes] = await Promise.all([currQuery, prevQuery]);
-        if (currRes.error) throw currRes.error;
-
-        let total = 0, newUsers = 0, returningUsers = 0;
-        currRes.data?.forEach(row => {
-            const count = parseInt(row.total_users) || 0;
-            const type = row.user_type ? row.user_type.toLowerCase().trim() : "";
-            total += count;
-            if (type === 'new') newUsers += count; else if (type === 'returning') returningUsers += count;
-        });
-        const prevTotal = (prevRes.data || []).reduce((acc, row) => acc + (parseInt(row.total_users) || 0), 0);
+        const curr = statsData.current;
+        const prev = statsData.previous;
 
         // Кешування DOM-елементів
         dashboardState.domElements.totalUsers = dashboardState.domElements.totalUsers || document.getElementById('total-users') || document.getElementById('users-count');
@@ -309,105 +195,46 @@ async function updateGeneralStats() {
         dashboardState.domElements.usersReturning = dashboardState.domElements.usersReturning || document.getElementById('users-returning');
         dashboardState.domElements.usersTrend = dashboardState.domElements.usersTrend || document.getElementById('users-trend');
 
-        if (dashboardState.domElements.totalUsers) animateCount(dashboardState.domElements.totalUsers, total);
-        animateCount(dashboardState.domElements.usersNew, newUsers);
-        animateCount(dashboardState.domElements.usersReturning, returningUsers);
-        updateTrendBadge('users-trend', total, prevTotal); // 'users-trend' залишається ID
-        return total;
+        if (dashboardState.domElements.totalUsers) animateCount(dashboardState.domElements.totalUsers, curr.total);
+        animateCount(dashboardState.domElements.usersNew, curr.new);
+        animateCount(dashboardState.domElements.usersReturning, curr.returning);
+        updateTrendBadge('users-trend', curr.total, prev.total);
+        return curr.total;
     } catch (err) { console.error("❌ Помилка загальної статистики:", err); return 0; }
 }
 
 async function updateSalesCharts() {
     const period = getDateRange();
-    const chartStartDate = new Date(); 
+    const chartStartDate = new Date();
     chartStartDate.setDate(chartStartDate.getDate() - 29);
     const chartStartISO = chartStartDate.toISOString().split('T')[0];
-    const pids = getPromoterIds();
 
     try {
+        // Use PHP API to get orders
+        const data = await getOrders(chartStartISO, null);
+
+        if (!data) {
+            console.error("❌ Failed to load orders");
+            return;
+        }
+
         let stats = [];
 
-        if (pids) {
-            const data = await fetchAllOrders(pids, chartStartISO, null, 'visit_date, subtotal_amount, tickets_count, seller_id');
-
-            const tempMap = {};
-            data.forEach(row => {
-                if (!row.visit_date) return;
-                const d = row.visit_date.substring(0, 10);
-                
-                if (!tempMap[d]) tempMap[d] = { 
-                    all_r:0, all_o:0, all_t:0, 
-                    numo_r:0, numo_o:0, numo_t:0, 
-                    kara_r:0, kara_o:0, kara_t:0, 
-                    mtic_r:0, mtic_o:0, mtic_t:0, 
-                    ib_r:0, ib_o:0, ib_t:0,
-                    others_r:0, others_o:0, others_t:0
-                };
-                
-                const rev = parseFloat(row.subtotal_amount) || 0;
-                const tix = parseInt(row.tickets_count) || 0;
-                const ord = 1; 
-                const sId = Number(row.seller_id);
-                
-                // 1. Загальна сума (All)
-                tempMap[d].all_r += rev; tempMap[d].all_o += ord; tempMap[d].all_t += tix;
-                
-                // 2. Розподіл по конкретних селлерах
-                if (sId === window.SELLER_IDS.NUMOTAMO) { 
-                    tempMap[d].numo_r += rev; tempMap[d].numo_o += ord; tempMap[d].numo_t += tix; 
-                } else if (sId === window.SELLER_IDS.KARABAS) { 
-                    tempMap[d].kara_r += rev; tempMap[d].kara_o += ord; tempMap[d].kara_t += tix; 
-                } else if (sId === window.SELLER_IDS.INTERNET_BILET) { 
-                    tempMap[d].ib_r += rev; tempMap[d].ib_o += ord; tempMap[d].ib_t += tix; 
-                } else if (sId === window.SELLER_IDS.MTICKET) { 
-                    tempMap[d].mtic_r += rev; tempMap[d].mtic_o += ord; tempMap[d].mtic_t += tix; 
-                } else { 
-                    // Всі інші потрапляють сюди
-                    tempMap[d].others_r += rev; tempMap[d].others_o += ord; tempMap[d].others_t += tix; 
-                }
-            });
-            
-            Object.entries(tempMap).forEach(([date, val]) => {
-                const types = [
-                    {key: 'all', r: 'all_r', o: 'all_o', t: 'all_t'},
-                    {key: 'numotamo', r: 'numo_r', o: 'numo_o', t: 'numo_t'},
-                    {key: 'karabas', r: 'kara_r', o: 'kara_o', t: 'kara_t'},
-                    {key: 'mticket', r: 'mtic_r', o: 'mtic_o', t: 'mtic_t'},
-                    {key: 'internet_bilet', r: 'ib_r', o: 'ib_o', t: 'ib_t'},
-                    {key: 'others', r: 'others_r', o: 'others_o', t: 'others_t'}
-                ];
-                types.forEach(type => {
-                    stats.push({ 
-                        visit_date: date, 
-                        total_revenue: val[type.r], 
-                        total_orders: val[type.o], 
-                        total_tickets: val[type.t], 
-                        report_type: type.key 
-                    });
-                });
-            });
-
-        } else {
-            const { data, error } = await supabaseClient
-                .from('portal_sales_daily')
-                .select('visit_date, total_revenue, total_orders, total_tickets, report_type')
-                .gte('visit_date', chartStartISO);
-
-            if (error) throw error;
-            stats = data;
-        }
+        // Group raw orders using PHP endpoint
+        const groupedData = await groupRawOrders(data);
+        stats = groupedData || [];
 
         const daysMap = {};
         for (let i = 29; i >= 0; i--) {
             const d = new Date(); d.setDate(d.getDate() - i);
             const iso = d.toISOString().split('T')[0];
-            daysMap[iso] = { 
+            daysMap[iso] = {
                 label: d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}),
-                all: { r: 0, o: 0, t: 0 }, 
-                numo: { r: 0, o: 0, t: 0 }, 
-                kara: { r: 0, o: 0, t: 0 }, 
-                mtic: { r: 0, o: 0, t: 0 }, 
-                ib: { r: 0, o: 0, t: 0 }, 
+                all: { r: 0, o: 0, t: 0 },
+                numo: { r: 0, o: 0, t: 0 },
+                kara: { r: 0, o: 0, t: 0 },
+                mtic: { r: 0, o: 0, t: 0 },
+                ib: { r: 0, o: 0, t: 0 },
                 others: { r: 0, o: 0, t: 0 }
             };
         }
@@ -416,7 +243,7 @@ async function updateSalesCharts() {
 
         stats.forEach(row => {
             if (!row.visit_date) return;
-            const d = row.visit_date.substring(0, 10); 
+            const d = row.visit_date.substring(0, 10);
             const type = row.report_type;
             if (!daysMap[d]) return;
 
@@ -431,7 +258,7 @@ async function updateSalesCharts() {
             else if (type === 'karabas') mapKey = 'kara';
             else if (type === 'mticket') mapKey = 'mtic';
             else if (type === 'internet_bilet') mapKey = 'ib';
-            
+
             if (daysMap[d][mapKey]) {
                 daysMap[d][mapKey] = { r, o, t };
                 if (type === 'all' && d >= period.start && d <= period.end) {
@@ -472,13 +299,12 @@ async function updateSalesCharts() {
 async function updateDeviceStats() {
     try {
         const { start, end } = getDateRange();
-        const pids = getPromoterIds();
-        
-        let query = supabaseClient.from('device_stats').select('device_category, total_users').gte('visit_date', start).lte('visit_date', end);
-        if(pids) query = query.in('promoter_id', pids);
 
-        const { data, error } = await query;
-        if (error) throw error;
+        const data = await getDeviceStats(start, end);
+        if (!data) {
+            console.error("❌ Failed to load device stats");
+            return;
+        }
 
         const stats = { mobile: 0, desktop: 0, tablet: 0, "smart tv": 0 };
         data.forEach(item => {
@@ -530,19 +356,12 @@ async function updateOrdersTable() {
         const { start, end } = getDateRange();
         const tbody = dashboardState.domElements.ordersTableBody = dashboardState.domElements.ordersTableBody || document.getElementById('orders-table-body');
         if (!tbody) return;
-        
-        let query = supabaseClient.from('orders')
-            .select('*')
-            .gte('visit_date', start)
-            .lte('visit_date', end)
-            .order('date_created', { ascending: false })
-            .limit(10);
-            
-        const pids = getPromoterIds();
-        if (pids) query = query.in('promoterId', pids);
 
-        const { data, error } = await query;
-        if (error) throw error;
+        const data = await getOrders(start, end, 10);
+        if (!data) {
+            console.error("❌ Failed to load orders");
+            return;
+        }
 
         const getSellerName = (sellerId) => {
             const id = Number(sellerId);
@@ -550,7 +369,7 @@ async function updateOrdersTable() {
             if (id === window.SELLER_IDS.KARABAS) return '<span class="badge text-warning border">Karabas</span>';
             if (id === window.SELLER_IDS.MTICKET) return '<span class="badge text-info border">MTicket</span>';
             if (id === window.SELLER_IDS.INTERNET_BILET) return '<span class="badge text-primary border">Internet-Bilet</span>';
-            return '<span class="badge text-secondary border">Інший продавець</span>'; // Загальний fallback
+            return '<span class="badge text-secondary border">Інший продавець</span>';
         };
 
         tbody.innerHTML = (data || []).map(order => {
@@ -562,20 +381,19 @@ async function updateOrdersTable() {
 }
 
 // ========================================================================= //
-// 6. БЛОК: Відвідуваність за містами (КАРТА УКРАЇНИ)
+// 6. БЛОК: Відвідуваність за містами (КАРТА NEDERLAND)
 // ========================================================================= //
 async function updateCityStats() {
     try {
         const { start, end } = getDateRange();
         const container = dashboardState.domElements.citiesList = dashboardState.domElements.citiesList || document.getElementById('cities-list');
         if (!container) return;
-        const pids = getPromoterIds();
 
-        let query = supabaseClient.from('city_stats').select('city_ua, city_name, total_users, region_code, region_ua').gte('visit_date', start).lte('visit_date', end);
-        if(pids) query = query.in('promoter_id', pids);
-
-        const { data, error } = await query;
-        if (error) throw error;
+        const data = await getCityStats(start, end);
+        if (!data) {
+            console.error("❌ Failed to load city stats");
+            return;
+        }
 
         const cityData = {}; const mapData = {};
 
@@ -652,13 +470,12 @@ function renderUkraineMap(dbData) {
 async function updateGenderStats() {
     try {
         const { start, end } = getDateRange();
-        const pids = getPromoterIds();
 
-        let query = supabaseClient.from('gender_stats').select('user_gender, total_users').gte('visit_date', start).lte('visit_date', end);
-        if(pids) query = query.in('promoter_id', pids);
-
-        const { data, error } = await query;
-        if (error) throw error;
+        const data = await getGenderStats(start, end);
+        if (!data) {
+            console.error("❌ Failed to load gender stats");
+            return;
+        }
 
         const aggregated = { male: 0, female: 0, unknown: 0 };
         data.forEach(item => {
@@ -669,7 +486,7 @@ async function updateGenderStats() {
         const genderData = [
             { name: 'Чоловіки', slug: 'male', count: aggregated.male },
             { name: 'Жінки', slug: 'female', count: aggregated.female },
-            { name: 'Не визначено', slug: 'unknown', count: aggregated.unknown } // Додано для повноти
+            { name: 'Не визначено', slug: 'unknown', count: aggregated.unknown }
         ].sort((a, b) => b.count - a.count);
 
         const localTotal = genderData.reduce((sum, item) => sum + item.count, 0);
@@ -688,7 +505,7 @@ async function updateGenderStats() {
             if (dashboardState.domElements[`genderPct${item.slug}`]) dashboardState.domElements[`genderPct${item.slug}`].innerText = `${pct}%`;
         });
         if (dashboardState.chartInstances.genderRadialChart) dashboardState.chartInstances.genderRadialChart.updateOptions({ series: seriesData, labels: labelsData });
-        else initGenderChart(seriesData, labelsData, countsOnly); // Ініціалізація графіка
+        else initGenderChart(seriesData, labelsData, countsOnly);
     } catch (err) { console.error(err); }
 }
 function initGenderChart(series, labels, counts) {
@@ -711,16 +528,16 @@ async function updateTopEventsTable() {
         const tbody = dashboardState.domElements.topEventsBody = dashboardState.domElements.topEventsBody || document.getElementById('top-events-body');
         if (!tbody) return;
 
-        const pids = getPromoterIds();
-        
-        // ФІКС: Тепер і адмін, і промоутер використовують пагінацію, щоб не впиратися в ліміт 1000 подій
-        const data = await fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count');
+        const data = await getOrders(start, end);
+        if (!data) {
+            console.error("❌ Failed to load orders");
+            return;
+        }
 
         const eventsMap = (data || []).reduce((acc, order) => {
             const name = order.title ? order.title.trim() : 'Невідома подія';
             if (!acc[name]) acc[name] = { tickets: 0, totalRevenue: 0 };
-            
-            // В таблиці заходів ми все ще чесно рахуємо квитки, бо там стоїть "шт."
+
             acc[name].tickets += parseInt(order.tickets_count) || 0;
             acc[name].totalRevenue += parseFloat(order.subtotal_amount) || 0;
             return acc;
@@ -737,20 +554,22 @@ async function updateTopEventsTable() {
 // ========================================================================= //
 async function updateTrafficPerformance() {
     const period = getDateRange();
-    const pids = getPromoterIds();
 
     try {
-        let query = supabaseClient.from('traffic_sources_stats').select('*').gte('visit_date', period.start).lte('visit_date', period.end).order('visit_date', { ascending: true });
-        if(pids) query = query.in('promoter_id', pids);
-
-        const { data: trafficData, error } = await query;
-        if (error) throw error;
+        const trafficData = await getTrafficStats(period.start, period.end);
+        if (!trafficData) {
+            console.error("❌ Failed to load traffic stats");
+            if (dashboardState.domElements.trafficStatTotalUsers) dashboardState.domElements.trafficStatTotalUsers.innerText = '0';
+            if (dashboardState.chartInstances.trafficGroupedObj) dashboardState.chartInstances.trafficGroupedObj.updateSeries([]);
+            return;
+        }
 
         if (!trafficData || trafficData.length === 0) {
             if (dashboardState.domElements.trafficStatTotalUsers) dashboardState.domElements.trafficStatTotalUsers.innerText = '0';
             if (dashboardState.chartInstances.trafficGroupedObj) dashboardState.chartInstances.trafficGroupedObj.updateSeries([]);
             return;
         }
+
         dashboardState.domElements.trafficStatTotalUsers = dashboardState.domElements.trafficStatTotalUsers || document.getElementById('traffic-stat-total-users');
         const totalUsers = trafficData.reduce((sum, row) => sum + (Number(row.total_users) || 0), 0);
         if (dashboardState.domElements.trafficStatTotalUsers) animateCount(dashboardState.domElements.trafficStatTotalUsers, totalUsers, 1000, '');
@@ -782,27 +601,26 @@ function renderTrafficGroupedBarChart(series, categories) {
         yaxis: { labels: { style: { colors: '#637381' }, formatter: (val) => val.toFixed(0) } },
         tooltip: { shared: false, intersect: true, custom: function({ series, seriesIndex, dataPointIndex, w }) { const val = series[seriesIndex][dataPointIndex]; const name = w.globals.seriesNames[seriesIndex]; const color = w.globals.colors[seriesIndex]; const date = w.globals.labels[dataPointIndex]; if (val <= 0) return ''; return `<div class="p-2" style="background: #1c2434; border: 1px solid #2d3748; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"><div class="mb-1 fw-bold text-white-50" style="font-size: 10px; text-transform: uppercase;">${date}</div><div class="d-flex align-items-center gap-2"><span style="width: 10px; height: 10px; border-radius: 50%; background-color: ${color}; display: inline-block;"></span><span class="text-white" style="font-size: 13px;">${name}: <b>${val}</b></span></div></div>`; } },
         stroke: { show: true, width: 1, colors: ['#1c2434'] }, states: { hover: { filter: { type: 'lighten', value: 0.1 } }, active: { allowMultipleDataPointsSelection: false, filter: { type: 'darken', value: 0.2 } } }
-    }; // Змінено на dashboardState.chartInstances.trafficGroupedObj
+    };
     if (dashboardState.chartInstances.trafficGroupedObj) dashboardState.chartInstances.trafficGroupedObj.updateOptions(options); else { dashboardState.chartInstances.trafficGroupedObj = new ApexCharts(element, options); dashboardState.chartInstances.trafficGroupedObj.render(); }
 }
 
 async function updateSEOCharts() {
     const chartStartDate = new Date(); chartStartDate.setDate(chartStartDate.getDate() - 29);
     const chartStartISO = chartStartDate.toISOString().split('T')[0];
-    const pids = getPromoterIds();
 
     try {
-        let query = supabaseClient.from('seo_performance_daily').select('*').gte('visit_date', chartStartISO);
-        if(pids) query = query.in('prom_id', pids);
-
-        const { data: stats, error } = await query;
-        if (error) throw error;
+        const stats = await getSeoStats(chartStartISO);
+        if (!stats) {
+            console.error("❌ Failed to load SEO stats");
+            return;
+        }
 
         const daysMap = {};
         for (let i = 29; i >= 0; i--) {
             const d = new Date(); d.setDate(d.getDate() - i);
             const iso = d.toISOString().split('T')[0];
-            daysMap[iso] = { clicks: 0, impressions: 0, position: 0, ctr: 0 }; 
+            daysMap[iso] = { clicks: 0, impressions: 0, position: 0, ctr: 0 };
         }
 
         let monthTotalPos = 0, monthDays = 0;
@@ -812,11 +630,11 @@ async function updateSEOCharts() {
             const c = parseInt(row.google_search_clicks) || 0;
             const im = parseInt(row.google_search_impressions) || 0;
             const po = parseFloat(row.google_search_avg_position) || 0;
-            const ctr = (parseFloat(row.organic_ctr) || 0) * 100; 
+            const ctr = (parseFloat(row.organic_ctr) || 0) * 100;
 
             if (daysMap[d]) {
-                daysMap[d].clicks += c; daysMap[d].impressions += im; 
-                daysMap[d].position = daysMap[d].position ? (daysMap[d].position + po) / 2 : po; 
+                daysMap[d].clicks += c; daysMap[d].impressions += im;
+                daysMap[d].position = daysMap[d].position ? (daysMap[d].position + po) / 2 : po;
                 daysMap[d].ctr = daysMap[d].ctr ? (daysMap[d].ctr + ctr) / 2 : ctr;
                 if (po > 0) { monthTotalPos += po; monthDays++; }
             }
@@ -841,7 +659,7 @@ async function updateSEOCharts() {
         dashboardState.domElements.seoStatAvgPos = dashboardState.domElements.seoStatAvgPos || document.getElementById('seo-stat-avg-pos');
         if (dashboardState.domElements.seoStatAvgPos) {
             if (rawAvgPos === 0) dashboardState.domElements.seoStatAvgPos.innerText = "не визначено"; else animateCount(dashboardState.domElements.seoStatAvgPos, rawAvgPos, 1000, '');
-        } // Змінено на dashboardState.domElements.seoStatAvgPos
+        }
     } catch (err) { console.error("❌ Помилка SEO аналітики:", err); }
 }
 
@@ -862,7 +680,7 @@ function renderSEOPerformanceChart(series, labels) {
         ],
         grid: { borderColor: '#f1f1f1', strokeDashArray: 3, xaxis: { lines: { show: false } }, padding: { top: 20 } },
         legend: { position: 'top', horizontalAlign: 'right' },
-        tooltip: { shared: true, intersect: false, y: { formatter: function (y, { seriesIndex, w }) { if (typeof y === "undefined" || y === null) return y; const seriesName = w.globals.seriesNames[seriesIndex]; if (seriesName === 'Середня позиція') return "№" + y.toFixed(1); if (seriesName === 'CTR') return y.toFixed(2) + "%"; if (seriesName === 'Кліки Google') return y.toLocaleString('uk-UA') + " кліків"; if (seriesName === 'Покази Google') return y.toLocaleString('uk-UA') + " показів"; return y; } } } // Змінено на dashboardState.chartInstances.seoPerformanceChartObj
+        tooltip: { shared: true, intersect: false, y: { formatter: function (y, { seriesIndex, w }) { if (typeof y === "undefined" || y === null) return y; const seriesName = w.globals.seriesNames[seriesIndex]; if (seriesName === 'Середня позиція') return "№" + y.toFixed(1); if (seriesName === 'CTR') return y.toFixed(2) + "%"; if (seriesName === 'Кліки Google') return y.toLocaleString('uk-UA') + " кліків"; if (seriesName === 'Покази Google') return y.toLocaleString('uk-UA') + " показів"; return y; } } }
     };
 
     if (dashboardState.chartInstances.seoPerformanceChartObj) dashboardState.chartInstances.seoPerformanceChartObj.updateOptions(options); else { dashboardState.chartInstances.seoPerformanceChartObj = new ApexCharts(element, options); dashboardState.chartInstances.seoPerformanceChartObj.render(); }
@@ -874,15 +692,14 @@ function renderSEOPerformanceChart(series, labels) {
 async function updateCountryStats() {
     try {
         const { start, end } = getDateRange();
-        const pids = getPromoterIds();
         const container = dashboardState.domElements.countriesList = dashboardState.domElements.countriesList || document.getElementById('countries-list');
         if (!container) return;
 
-        let query = supabaseClient.from('country_stats').select('country_name, country_code, total_users').gte('visit_date', start).lte('visit_date', end);
-        if(pids) query = query.in('promoter_id', pids);
-
-        const { data, error } = await query;
-        if (error) throw error;
+        const data = await getCountryStats(start, end);
+        if (!data) {
+            console.error("❌ Failed to load country stats");
+            return;
+        }
 
         const aggregated = {};
         data.forEach(item => {
@@ -909,9 +726,9 @@ async function updateCountryStats() {
 function renderWorldMap(dataValues) {
     const mapEl = dashboardState.domElements.mapWorld = dashboardState.domElements.mapWorld || document.getElementById('map-world');
     if (!mapEl) return;
-    mapEl.innerHTML = ''; 
+    mapEl.innerHTML = '';
     dashboardState.chartInstances.worldMap = new jsVectorMap({
-        selector: '#map-world', map: 'world', backgroundColor: 'transparent', // Змінено на dashboardState.chartInstances.worldMap
+        selector: '#map-world', map: 'world', backgroundColor: 'transparent',
         regionStyle: { initial: { fill: window.theme.gray300, stroke: window.theme.gray300, strokeWidth: 2 }, hover: { fillOpacity: 1, fill: window.theme.primary } }, zoomOnScroll: false, zoomButtons: false,
         visualizeData: { scale: ['#fcfdfd', '#c4cdd5', '#ff0000'], values: dataValues },
         onRegionTooltipShow(event, tooltip, code) { const count = dataValues[code] || 0; tooltip.text(`<strong>${tooltip.text()}</strong>: ${count.toLocaleString('uk-UA')}`, true); }
@@ -923,17 +740,16 @@ function renderWorldMap(dataValues) {
 // ========================================================================= //
 async function updateConversionFunnelChart() {
     const period = getDateRange();
-    const pids = getPromoterIds();
     const container = dashboardState.domElements.funnelChart = dashboardState.domElements.funnelChart || document.getElementById('funnelChart');
     if (!container) return;
 
     try {
-        let query = supabaseClient.from('conversion_funnel_daily').select('*').gte('visit_date', period.start).lte('visit_date', period.end).order('visit_date', { ascending: true });
-        if(pids) query = query.in('promoter_id', pids);
+        const data = await getFunnelStats(period.start, period.end);
+        if (!data) {
+            console.error("❌ Failed to load funnel stats");
+            return;
+        }
 
-        const { data, error } = await query;
-        if (error) throw error;
-        
         if (!data || data.length === 0) return;
 
         let totalViews = 0, totalBooking = 0, totalCarts = 0, totalCheckouts = 0, totalPurchases = 0;
@@ -969,7 +785,7 @@ function renderFunnelChart(data, categories) {
         series: [{ name: "Користувачі", data: data }], chart: { type: 'bar', height: 350, toolbar: { show: false }, fontFamily: 'Public Sans, serif' },
         plotOptions: { bar: { borderRadius: 0, horizontal: true, barHeight: '80%', isFunnel: true } }, colors: ['#00a76f'],
         dataLabels: { enabled: true, formatter: function (val, opt) { const prevVal = opt.w.globals.series[0][opt.dataPointIndex - 1]; const pctFromPrev = prevVal > 0 ? ((val / prevVal) * 100).toFixed(0) + '%' : ''; return categories[opt.dataPointIndex] + ': ' + val.toLocaleString('uk-UA') + (pctFromPrev ? ' (' + pctFromPrev + ')' : ''); }, dropShadow: { enabled: true } },
-        xaxis: { categories: categories, labels: { show: false } }, legend: { show: false }, tooltip: { shared: false, y: { formatter: (val) => val.toLocaleString('uk-UA') + " чол." } }, stroke: { show: true, width: 1, colors: ['#1c2434'] } // Змінено на dashboardState.chartInstances.funnelChartObj
+        xaxis: { categories: categories, labels: { show: false } }, legend: { show: false }, tooltip: { shared: false, y: { formatter: (val) => val.toLocaleString('uk-UA') + " чол." } }, stroke: { show: true, width: 1, colors: ['#1c2434'] }
     };
     if (dashboardState.chartInstances.funnelChartObj) { dashboardState.chartInstances.funnelChartObj.updateOptions({ xaxis: { categories: categories } }); dashboardState.chartInstances.funnelChartObj.updateSeries([{ data: data }]); } else { dashboardState.chartInstances.funnelChartObj = new ApexCharts(element, options); dashboardState.chartInstances.funnelChartObj.render(); }
 }
@@ -978,21 +794,20 @@ function renderFunnelChart(data, categories) {
 // 12. СИСТЕМА ДОСТУПУ (PERMISSIONS), REALTIME ТА ЗАПУСК
 // ========================================================================= //
 
-function subscribeToOrders() {
-    if (dashboardState.isSubscribed) return; 
-    supabaseClient.channel('schema-db-changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
-        console.log('🔔 Нове замовлення!');
-        if (dashboardState.userPermissions?.recent_orders) updateOrdersTable(); 
-        if (dashboardState.userPermissions?.sales_charts) updateSalesCharts(); 
-        if (dashboardState.userPermissions?.top_events) updateTopEventsTable(); 
+function subscribeToOrdersUpdates() {
+    // Note: Real-time updates would need to be implemented with PHP/WebSocket
+    // For now, this is a placeholder that periodically refreshes data
+    setInterval(() => {
+        if (dashboardState.userPermissions?.recent_orders) updateOrdersTable();
+        if (dashboardState.userPermissions?.sales_charts) updateSalesCharts();
+        if (dashboardState.userPermissions?.top_events) updateTopEventsTable();
         if (dashboardState.userPermissions?.top_stats) { updateGeneralStats(); updateSalesStats(); }
-    }).subscribe();
-    dashboardState.isSubscribed = true;
+    }, 30000); // Refresh every 30 seconds
 }
 
 window.changeDashboardPeriod = function(period, label) {
     dashboardState.currentPeriod = period;
-    initDashboard(); 
+    initDashboard();
     dashboardState.domElements.currentPeriodText = dashboardState.domElements.currentPeriodText || document.getElementById('current-period-text');
     if (dashboardState.domElements.currentPeriodText) dashboardState.domElements.currentPeriodText.innerText = label;
 };
@@ -1001,8 +816,8 @@ window.changeDashboardPeriod = function(period, label) {
 async function initDashboard() {
     try {
         console.log("🚀 Початок ініціалізації дашборду...");
-        const tasks = []; // Змінено на dashboardState.userPermissions
-        const p = dashboardState.userPermissions; 
+        const tasks = [];
+        const p = dashboardState.userPermissions;
 
         if (!p || p.top_stats) { tasks.push(updateSalesStats()); tasks.push(updateGeneralStats()); }
         if (!p || p.sales_charts) tasks.push(updateSalesCharts());
@@ -1017,8 +832,8 @@ async function initDashboard() {
 
         await Promise.all(tasks);
         console.log("✅ Дашборд успішно оновлено");
-    } catch (err) { 
-        console.error("❌ Критична помилка ініціалізації:", err); 
+    } catch (err) {
+        console.error("❌ Критична помилка ініціалізації:", err);
     }
 }
 
@@ -1049,43 +864,55 @@ async function authenticateAndInit() {
         console.log("Привіт, Telegram юзер:", tg.initDataUnsafe?.user?.first_name);
     }
 
-    const tgUser = tg?.initDataUnsafe?.user; // Отримуємо користувача після ініціалізації
+    const tgUser = tg?.initDataUnsafe?.user;
 
     if (!tgUser) {
         // Якщо не Telegram WebApp, або користувач не авторизований, надаємо повні права
-        // Це може бути тестовий режим або режим для адміна через браузер
         dashboardState.userPermissions = {
-            promoter_id: null, dashboard: true, top_stats: true, sales_charts: true, users: true, devices: true, recent_orders: true, 
+            promoter_id: null, dashboard: true, top_stats: true, sales_charts: true, users: true, devices: true, recent_orders: true,
             cities: true, gender: true, top_events: true, traffic_seo: true, countries: true, funnel: true
         };
-        initDashboard(); subscribeToOrders(); return;
+        initDashboard(); subscribeToOrdersUpdates(); return;
     }
 
     const userId = tgUser.id; const firstName = tgUser.first_name;
 
-    const { data: userRecord, error } = await supabaseClient.from('user_permissions').select('*').eq('tg_id', userId).single();
+    try {
+        // Use PHP API to get user permissions
+        const userRecord = await getStats('user-permissions', userId);
 
-    if (error || !userRecord || userRecord.dashboard !== true) {
+        if (!userRecord || userRecord.dashboard !== true) {
+            document.body.innerHTML = `
+                <div style="display:flex; height:100vh; align-items:center; justify-content:center; background:#1c2434; color:white; font-family:sans-serif; text-align:center; padding: 20px;">
+                    <div>
+                        <h2 style="color:#ff5630; margin-bottom: 10px;">⛔ Доступ заборонено</h2>
+                        <p style="font-size: 16px;">Вибачте, <b>${firstName}</b>, але у вас немає прав для перегляду цієї сторінки.</p>
+                        <div style="margin-top: 20px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;"><span style="color:#637381; font-size: 12px;">Ваш Telegram ID:</span><br><b style="font-size: 18px; color: #00a76f;">${userId}</b></div>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        dashboardState.userPermissions = userRecord;
+        dashboardState.domElements.userGreetingName = dashboardState.domElements.userGreetingName || document.getElementById('user-greeting-name');
+        if (dashboardState.domElements.userGreetingName) dashboardState.domElements.userGreetingName.innerText = firstName;
+
+        applyPermissionsToUI(dashboardState.userPermissions);
+        initDashboard();
+        subscribeToOrdersUpdates();
+
+    } catch (err) {
+        console.error("❌ Помилка аутентифікації:", err);
         document.body.innerHTML = `
             <div style="display:flex; height:100vh; align-items:center; justify-content:center; background:#1c2434; color:white; font-family:sans-serif; text-align:center; padding: 20px;">
                 <div>
-                    <h2 style="color:#ff5630; margin-bottom: 10px;">⛔ Доступ заборонено</h2>
-                    <p style="font-size: 16px;">Вибачте, <b>${firstName}</b>, але у вас немає прав для перегляду цієї сторінки.</p>
-                    <div style="margin-top: 20px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;"><span style="color:#637381; font-size: 12px;">Ваш Telegram ID:</span><br><b style="font-size: 18px; color: #00a76f;">${userId}</b></div>
+                    <h2 style="color:#ff5630; margin-bottom: 10px;">⛔ Помилка аутентифікації</h2>
+                    <p style="font-size: 16px;">Виникла помилка при завантаженні даних вашого профіля. Спробуйте пізніше.</p>
                 </div>
             </div>
         `;
-        return; 
     }
-
-    dashboardState.userPermissions = userRecord; // Змінено на dashboardState.userPermissions
-    dashboardState.domElements.userGreetingName = dashboardState.domElements.userGreetingName || document.getElementById('user-greeting-name');
-    if (dashboardState.domElements.userGreetingName) dashboardState.domElements.userGreetingName.innerText = firstName;
-    
-    applyPermissionsToUI(dashboardState.userPermissions);
-    initDashboard();
-    subscribeToOrders();
-
 }
 
 document.addEventListener('DOMContentLoaded', authenticateAndInit);
@@ -1114,27 +941,24 @@ document.addEventListener('DOMContentLoaded', function() {
             dateFormat: "Y-m-d",
             maxDate: "today",
             minDate: new Date().fp_incr(-30),
-            disableMobile: true, // КРИТИЧНО для Telegram
+            disableMobile: true,
             inline: false,
             static: false,
-            appendTo: document.body, // Виносимо за межі DOM-дерева меню
+            appendTo: document.body,
             onClose: function(selectedDates, dateStr, instance) {
                 if (selectedDates.length > 0) {
                     const start = instance.formatDate(selectedDates[0], "Y-m-d");
-                    const end = selectedDates.length > 1 ? instance.formatDate(selectedDates[1], "Y-m-d") : start; // Змінено на dashboardState.customDateRange
-                    
-                    // customDateRange - це глобальна змінна, яка використовується в getDateRange
-                    dashboardState.customDateRange = { start, end }; // CRITICAL FIX: Використовуємо dashboardState
-                    
+                    const end = selectedDates.length > 1 ? instance.formatDate(selectedDates[1], "Y-m-d") : start;
+
+                    dashboardState.customDateRange = { start, end };
+
                     let displayText = instance.formatDate(selectedDates[0], "d.m");
                     if (selectedDates.length > 1) {
                         displayText += " - " + instance.formatDate(selectedDates[1], "d.m");
                     }
-                    
-                    // Викликаємо оновлення (використовуємо window.changeDashboardPeriod, яка тепер оновлює dashboardState)
+
                     window.changeDashboardPeriod('custom', displayText);
-                    
-                    // Закриваємо дропдаун Bootstrap вручну після вибору
+
                     const dropdownElement = document.querySelector('[data-bs-toggle="dropdown"]');
                     const bootstrapDropdown = bootstrap.Dropdown.getInstance(dropdownElement);
                     if (bootstrapDropdown) bootstrapDropdown.hide();
@@ -1146,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('custom-range-menu-item').addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            fp.open(); // Явно відкриваємо календар
+            fp.open();
         });
     }
 });

@@ -95,6 +95,12 @@ function fonts() {
   return src(paths.src.fonts).pipe(dest(paths.dist.fonts));
 }
 
+// API (copy PHP files)
+function api() {
+  return src('./src/api/**/*', { encoding: false })
+    .pipe(dest(paths.dist.basedist + '/api'));
+}
+
 // HTML
 function html() {
   return src([paths.src.html, '!./src/partials/**/*'])
@@ -131,8 +137,8 @@ function watchTask() {
 
 // --- Експорт тасків ---
 exports.build = series(
-  cleanDist, 
-  parallel(html, scripts, mainJs, images, maps, fonts, vendorJs, copyLibs)
+  cleanDist,
+  parallel(html, scripts, mainJs, images, maps, fonts, vendorJs, copyLibs, api)
 );
 
 exports.default = series(scss, html, watchTask);

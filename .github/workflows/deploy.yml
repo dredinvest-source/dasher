@@ -23,7 +23,11 @@ jobs:
         run: npm install
 
       - name: Run Gulp build
-        run: npx gulp build 
+        run: npx gulp build
+
+      - name: Verify PHP syntax
+        run: |
+          find ./dist/api -name "*.php" -type f -exec php -l {} \;
 
       - name: Deploy to VPS via rsync
         uses: Burnett01/rsync-deployments@7.0.1
@@ -36,7 +40,7 @@ jobs:
           remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
           remote_key_pass: ${{ secrets.SSH_PASSPHRASE }}
 
-      - name: Post-deploy confirmation
+      - name: Post-deploy setup
         uses: appleboy/ssh-action@master
         with:
           host: 81.17.100.94
@@ -44,6 +48,32 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
-            echo "🚀 Деплой у /root/my_files/dashboard/dasher-1.0.1 завершено успішно!"
-            # Тут можна додати команду для перезапуску nginx:
-            # systemctl reload nginx
+            cd /root/my_files/dashboard/dasher-1.0.0
+
+            # Create cache directory for API if it doesn't exist
+            mkdir -p api/cache
+            chmod 755 api/cache
+
+            # Check if .env exists
+            if [ ! -f api/.env ]; then
+              echo "⚠️  WARNING: api/.env file not found!"
+              echo "🔑 You MUST create it manually on the server with your Supabase credentials."
+              echo ""
+              echo "Create file: /root/my_files/dashboard/dasher-1.0.0/api/.env"
+              echo "With content:"
+              echo "  SUPABASE_URL=https://your-project.supabase.co"
+              echo "  SUPABASE_KEY=your_publishable_key_from_supabase"
+              echo "  CACHE_TTL=300"
+              echo "  CACHE_DIR=/root/my_files/dashboard/dasher-1.0.0/api/cache"
+              exit 1
+            fi
+
+            # Set correct permissions for PHP files
+            chmod 644 api/*.php
+            chmod 755 api/endpoints
+            chmod 644 api/endpoints/*.php
+            chmod 600 api/.env
+
+            echo "✅ Деплой у /root/my_files/dashboard/dasher-1.0.0 завершено успішно!"
+            echo "📦 Файлові структури:"
+            ls -la api/ | grep -E "config|auth|endpoints"

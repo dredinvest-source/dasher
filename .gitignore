@@ -3,3 +3,11 @@ dist/
 .temp/
 .DS_Store
 .vscode/
+
+# Environment variables - NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+
+# API cache
+src/api/cache/
