@@ -77,6 +77,10 @@ function supabaseRequest($method, $table, $params = []) {
         throw new Exception("cURL Error: $error");
     }
 
+    if ($httpCode >= 400) {
+        error_log("Supabase HTTP Error: $httpCode. Response: " . $response);
+    }
+
     if (!$response) {
         return [];
     }

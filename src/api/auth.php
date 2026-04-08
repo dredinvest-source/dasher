@@ -32,10 +32,12 @@ function verifyTelegramUser() {
     $tgUser = getTelegramUser();
 
     if (!$tgUser || !isset($tgUser['id'])) {
+        error_log("DEBUG: getTelegramUser failed or no ID: " . json_encode($tgUser));
         return null;
     }
 
     $tgId = $tgUser['id'];
+    error_log("DEBUG: Telegram ID received: " . $tgId);
 
     try {
         $response = supabaseRequest('GET', 'user_permissions', [
@@ -43,15 +45,26 @@ function verifyTelegramUser() {
             'limit' => 1
         ]);
 
+        error_log("DEBUG: Supabase response: " . json_encode($response));
+
         if (is_array($response) && count($response) > 0) {
             $user = $response[0];
+            error_log("DEBUG: User found: " . json_encode($user));
 
             // Перевіряємо чи має доступ до дашborду
-            if (!isset($user['dashboard']) || $user['dashboard'] !== true) {
+            if (!isset($user['dashboard'])) {
+                error_log("DEBUG: 'dashboard' field not found in user data");
+                return null;
+            }
+
+            if ($user['dashboard'] !== true && $user['dashboard'] !== 1) {
+                error_log("DEBUG: dashboard is " . json_encode($user['dashboard']) . ", expected true/1");
                 return null;
             }
 
             return $user;
+        } else {
+            error_log("DEBUG: No user found in database for tg_id=" . $tgId);
         }
     } catch (Exception $e) {
         error_log("Auth error: " . $e->getMessage());
@@ -64,6 +77,11 @@ function verifyTelegramUser() {
  * Get promoter IDs from user permissions
  */
 function getPromoterIds($userRecord) {
+    // Якщо браузер (немає tg_id) - не фільтрувати дані
+    if ($userRecord === true) {
+        return null;
+    }
+
     if (!$userRecord || !isset($userRecord['promoter_id'])) {
         return null;
     }
@@ -91,11 +109,23 @@ function getPromoterIds($userRecord) {
 
 /**
  * Require authentication
+ * - Браузер (без tg_id): дай доступ
+ * - Mini App (з tg_id): перевір дозволи
  */
 function requireAuth() {
+    $tgUser = getTelegramUser();
+
+    // Якщо немає tg_id (браузер) - дай безумовний доступ
+    if (!$tgUser || !isset($tgUser['id'])) {
+        error_log("DEBUG: No tg_id provided - assuming browser access, granting access");
+        return true;
+    }
+
+    // Якщо є tg_id (Mini App) - перевір дозволи в БД
     $user = verifyTelegramUser();
 
     if (!$user) {
+        error_log("DEBUG: verifyTelegramUser failed for tg_id=" . $tgUser['id']);
         http_response_code(401);
         echo json_encode(['error' => 'Unauthorized']);
         exit;
